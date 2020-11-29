@@ -2,6 +2,7 @@ from python:3
 
 ARG USER_ID
 ARG GROUP_ID
+ARG INPUT_GROUP_ID
 
 # Don't attempt to set the user to the root user (uid=0) or group (gid=0)
 RUN if [ ${USER_ID:-0} -eq 0 ] || [ ${GROUP_ID:-0} -eq 0 ]; then \
@@ -17,10 +18,9 @@ RUN if [ ${USER_ID:-0} -eq 0 ] || [ ${GROUP_ID:-0} -eq 0 ]; then \
     && mkdir -p /etc/sudoers.d  \
     && echo "rfidreader ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/rfidreader-all-nopasswd
 
-# Add the input group (107)
-RUN groupadd -g 107 input \
+# Add the input group
+RUN groupadd -g ${INPUT_GROUP_ID} input \
     && usermod -a -G input rfidreader
-
 
 RUN apt-get update && apt-get -y install --no-install-recommends \
     vim \
