@@ -1,0 +1,5 @@
+pytest
+coverage
+wheel
+flake8
+evdev
