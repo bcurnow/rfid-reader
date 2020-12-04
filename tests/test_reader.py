@@ -1,5 +1,7 @@
 import select
 import time
+
+import pytest
 from unittest.mock import call, patch
 
 import evdev
@@ -29,6 +31,18 @@ def test___del__(evdev):
     reader.__del__()
     evdev.InputDevice.assert_called_once_with('/dev/test')
     device.close.assert_called_once()
+
+
+@patch('rfidreader.reader.evdev')
+def test___del___invalid_device(evdev):
+    device = evdev.InputDevice.return_value
+    device.fileno.return_value = 4
+    reader = RFIDReader('/dev/test', 500)
+    # Remove the device attribute to simulate the state that happens when an exception is thrown in __init__
+    delattr(reader, 'device')
+    reader.__del__()
+    evdev.InputDevice.assert_called_once_with('/dev/test')
+    device.close.assert_not_called()
 
 
 @patch('rfidreader.reader.evdev')

@@ -34,10 +34,11 @@ class RFIDReader:
         self.poller.register(self.device, select.POLLIN)
 
     def __del__(self):
-        # Need to catch RuntimeError due to https://github.com/gvalkov/python-evdev/issues/120
         try:
-            self.device.close()
+            if hasattr(self, 'device'):
+                self.device.close()
         except RuntimeError:
+            # Need to catch RuntimeError due to https://github.com/gvalkov/python-evdev/issues/120
             pass
 
     def read(self, timeout=None):
