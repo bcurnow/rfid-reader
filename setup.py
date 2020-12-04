@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='rfidreader',
-    version='1.0.0',
+    version='1.0.1',
     author='Brian Curnow',
     author_email='brian.curnow+rfidreader@gmail.com',
     description='A wrapper around evdev to read from an RFID reader that shows up like a keyboard.',
