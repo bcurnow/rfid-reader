@@ -1,7 +1,5 @@
-import select
 import time
 
-import pytest
 from unittest.mock import call, patch
 
 import evdev
@@ -9,6 +7,7 @@ import evdev
 from rfidreader.reader import RFIDReader, EVENT_READY_TIMEOUT
 
 timeout = 10
+
 
 @patch('rfidreader.reader.select')
 @patch('rfidreader.reader.evdev')

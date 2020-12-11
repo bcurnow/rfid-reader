@@ -12,7 +12,6 @@ from rfidreader import RFIDReader
 if __name__ == '__main__':
     reader = RFIDReader('/dev/input/rfid')
     reader.device.grab()
-    #grab_device(reader)
     print('acquired lock')
     event = reader.read(20)
     if event:
