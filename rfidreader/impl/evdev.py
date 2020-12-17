@@ -2,8 +2,8 @@ import select
 import evdev
 
 
-def register(device_name, ctx):
-    return ('evdev', EvdevReader(device_name, ctx))
+def register():
+    return ('evdev', EvdevReader)
 
 
 class EvdevReader:
@@ -32,13 +32,18 @@ class EvdevReader:
         'KEY_F': 'F',
     }
 
-    def __init__(self, device_name, ctx):
-        if hasattr(ctx, 'event_ready_timeout'):
-            self.event_ready_timeout = ctx.event_ready_timeout
+    def __init__(self, config):
+        if 'event_ready_timeout' in config:
+            self.event_ready_timeout = config['event_ready_timeout']
         else:
             self.event_ready_timeout = EvdevReader.EVENT_READY_TIMEOUT
 
-        self.device = evdev.InputDevice(device_name)
+        if 'device_name' in config:
+            self.device_name = config['device_name']
+        else:
+            self.device_name = '/dev/input/event0'
+
+        self.device = evdev.InputDevice(self.device_name)
         self.poller = select.poll()
         self.poller.register(self.device, select.POLLIN)
 
