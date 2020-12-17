@@ -1,13 +1,10 @@
 import time
-from types import SimpleNamespace
 
 import evdev
 import pytest
 from unittest.mock import call, patch
 
 from rfidreader.impl.evdev import EvdevReader, register
-
-CTX = SimpleNamespace(**{'event_ready_timeout': 500})
 
 
 def _raw_event(value=1, code=11):
@@ -23,17 +20,36 @@ def _raw_event(value=1, code=11):
     return Event(value, code)
 
 
+@pytest.mark.parametrize(
+    ('event_ready_timeout', 'device_name'),
+    [
+        (None, None),
+        (500, None),
+        (None, '/dev/test'),
+        (500, '/dev/test'),
+    ],
+    ids=['no config', 'timeout only', 'device_name only', 'timeout and device_name']
+    )
 @patch('rfidreader.impl.evdev.select')
 @patch('rfidreader.impl.evdev.evdev')
-def test_EvdevReader___init__(evdev, select):
+def test_EvdevReader___init__(evdev, select, event_ready_timeout, device_name):
+    config={}
+    if event_ready_timeout:
+        config['event_ready_timeout'] = event_ready_timeout
+    if device_name:
+        config['device_name'] = device_name
     device = evdev.InputDevice.return_value
     poller = select.poll.return_value
-    reader = EvdevReader('/dev/test', CTX)
-    assert device == reader.device
-    assert reader.event_ready_timeout == CTX.event_ready_timeout
+    reader = EvdevReader(config)
+    if not device_name:
+        device_name = '/dev/input/event0'
+    if not event_ready_timeout:
+        event_ready_timeout = 100
+    assert reader.device_name == device_name
+    assert reader.event_ready_timeout == event_ready_timeout
     assert poller == reader.poller
     poller.register.assert_called_once_with(device, select.POLLIN)
-    evdev.InputDevice.assert_called_once_with('/dev/test')
+    evdev.InputDevice.assert_called_once_with(device_name)
 
 
 @pytest.mark.parametrize(
@@ -47,9 +63,13 @@ def test_EvdevReader___init__(evdev, select):
     )
 @patch('rfidreader.impl.evdev.evdev')
 def test_EvdevReader___del__(evdev, delete_attr, close_side_effect):
+    config = {
+        'event_ready_timeout': 500,
+        'device_name': '/dev/test'
+        }
     device = evdev.InputDevice.return_value
     device.fileno.return_value = 4
-    reader = EvdevReader('/dev/test', 500)
+    reader = EvdevReader(config)
     if delete_attr:
         delattr(reader, delete_attr)
     if close_side_effect:
@@ -132,6 +152,6 @@ def test_EvdevReader__translate_event_wrong_event_type(evdev_reader, expected, e
 @patch('rfidreader.impl.evdev.select')
 @patch('rfidreader.impl.evdev.evdev')
 def test_register(evdev, select):
-    reader_type, reader = register('test', CTX)
+    reader_type, reader = register()
     assert reader_type == 'evdev'
-    assert isinstance(reader, EvdevReader)
+    assert reader == EvdevReader
