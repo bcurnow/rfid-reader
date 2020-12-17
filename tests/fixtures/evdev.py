@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 from unittest.mock import patch
 
@@ -18,4 +16,4 @@ def evdev_reader():
         # Make sure that the device return implements the fileno method
         device = mock_evdev.InputDevice.return_value
         device.fileno.return_value = 4
-        yield EvdevReader('/dev/input/rfid', SimpleNamespace())
+        yield EvdevReader({})
