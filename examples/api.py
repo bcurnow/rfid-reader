@@ -6,11 +6,12 @@ Then it will initiate a read with a timeout (to pause for human usage).
 Once it's read a single event, it will ungrab the device which will let
 the normal reader process continue.
 """
+import sys
 
 from rfidreader import RFIDReader
 
 if __name__ == '__main__':
-    reader = RFIDReader('/dev/input/rfid')
+    reader = RFIDReader(sys.argv[1], {})
     reader.device.grab()
     print('acquired lock')
     event = reader.read(20)
@@ -18,4 +19,3 @@ if __name__ == '__main__':
         print(event)
     reader.device.ungrab()
     print('released lock')
-    reader.__del__()
