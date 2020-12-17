@@ -4,10 +4,14 @@ rootDir=$(dirname $0)
 rootDir=$(cd ${rootDir}/.. && pwd)
 targetDir=$(cd ${rootDir} && basename $(pwd))
 
-if [[ -e /dev/input/rfid && -c /dev/input/rfid ]]
+if [[ ! -e /dev/input/rfid || ! -c /dev/input/rfid ]]
 then
-  docker run -it --mount src="${rootDir}",target=/${targetDir},type=bind --device=/dev/input/rfid:/dev/input/rfid:r ${targetDir}:latest /bin/bash
-else
-  echo "Did not find /dev/input/rfid, skipping --device"
-  docker run -it --mount src="${rootDir}",target=/${targetDir},type=bind ${targetDir}:latest /bin/bash
+  echo "Did not find /dev/input/rfid"
 fi
+
+if [[ ! -e /dev/spidev0.0 || ! -c /dev/spidev0.0 ]]
+then
+  echo "Did not find /dev/spidev0.0"
+fi
+
+docker run --privileged -it --mount src="${rootDir}",target=/${targetDir},type=bind --mount src=/dev,target=/dev,type=bind ${targetDir}:latest /bin/bash
