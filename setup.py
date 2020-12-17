@@ -11,7 +11,7 @@ setup(
     version='1.0.1',
     author='Brian Curnow',
     author_email='brian.curnow+rfidreader@gmail.com',
-    description='A wrapper around evdev to read from an RFID reader that shows up like a keyboard.',
+    description='A wrapper around various implementations of RFID readers (e.g. evdev, mfrc522).',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/bcurnow/rfid-reader',
@@ -26,7 +26,12 @@ setup(
 
     ],
     python_requires='>=3.6',
-    install_requires=[
-        'evdev',
-    ],
+    extras_require={
+        'evdev': 'evdev',
+        'mfrc522': [
+            'mfrc522',
+            'RPi.GPIO'
+        ]
+
+    },
 )
