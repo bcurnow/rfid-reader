@@ -122,7 +122,8 @@ def test_EvdevReader__read_all_available_events_translate_returns_none(evdev_rea
     [
         (None, 'this is not an event type'),
         (None, evdev.events.KeyEvent(_raw_event(value=0))),
-    ]
+    ],
+    ids=['Translate a non-event', 'Translate an event there is no mapping for']
     )
 def test_EvdevReader__translate_event_wrong_event_type(evdev_reader, expected, event):
     assert evdev_reader._translate_event(event) is expected
