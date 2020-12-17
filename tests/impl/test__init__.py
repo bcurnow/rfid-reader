@@ -17,12 +17,10 @@ def test_register_readers(iter_modules, import_module):
     import mocks.not_an_impl
     iter_modules.return_value = pkgutil.iter_modules(path=mocks.__path__)
     import_module.side_effect = [mocks.mock_impl, mocks.not_an_impl]
-    readers = register_readers('test', {})
+    readers = register_readers()
     assert len(readers) == 1
     assert 'mock' in readers
-    reader = readers['mock']
-    assert reader.device_name == 'test'
-    assert reader.ctx == {}
+    assert readers['mock'] == mocks.mock_impl.MockReader
     iter_modules.assert_called_once_with(path=real_pkg.__path__)
     import_module.assert_has_calls([
         call(f'{real_pkg.__name__}.mock_impl'),
