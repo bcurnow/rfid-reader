@@ -5,14 +5,14 @@ from rfidreader.impl import register_readers
 class RFIDReader:
     """
     Wraps up the basic reading function and registers all the implementations.
-    device_name: The name of the device the reader is connected to (e.g. /dev/input/event0)
-    ctx: A SimpleNamespace of configuration options which can be implementation dependent.
-         Will be passed to the implementation's register method as-is
+    config:      A dictionary of configuration options which can be implementation dependent.
+                 Will be passed passed un-modified to the implementation.
     """
-    def __init__(self, reader_type, device_name, ctx):
-        self.readers = register_readers(device_name, ctx)
+    def __init__(self, reader_type, config):
+        self.config = config
+        self.readers = register_readers()
         if reader_type in self.readers:
-            self.reader = self.readers[reader_type]
+            self.reader = self.readers[reader_type](config)
         else:
             raise RFIDReaderTypeException(f'Could not find a registered reader for "{reader_type}"')
 
