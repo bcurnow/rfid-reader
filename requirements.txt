@@ -3,3 +3,5 @@ coverage
 wheel
 flake8
 evdev
+mfrc522
+RPi.GPIO
