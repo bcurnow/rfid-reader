@@ -8,7 +8,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='rfidreader',
-    version='1.0.1',
+    version='2.0.0',
     author='Brian Curnow',
     author_email='brian.curnow+rfidreader@gmail.com',
     description='A wrapper around various implementations of RFID readers (e.g. evdev, mfrc522).',
