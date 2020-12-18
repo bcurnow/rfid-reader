@@ -2,8 +2,8 @@ import select
 import evdev
 
 
-def register():
-    return ('evdev', EvdevReader)
+def register(config):
+    return EvdevReader(config)
 
 
 class EvdevReader:

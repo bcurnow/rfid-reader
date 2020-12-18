@@ -152,6 +152,5 @@ def test_EvdevReader__translate_event_wrong_event_type(evdev_reader, expected, e
 @patch('rfidreader.impl.evdev.select')
 @patch('rfidreader.impl.evdev.evdev')
 def test_register(evdev, select):
-    reader_type, reader = register()
-    assert reader_type == 'evdev'
-    assert reader == EvdevReader
+    reader_class = register({})
+    assert isinstance(reader_class, EvdevReader)

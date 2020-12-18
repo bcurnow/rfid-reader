@@ -1,16 +1,16 @@
 import atexit
 import time
 
-import RPi.GPIO as GPIO
-from mfrc522 import MFRC522
 
-
-def register():
-    return ('mfrc522', MFRC522Reader)
+def register(config):
+    return MFRC522Reader(config)
 
 
 class MFRC522Reader:
     def __init__(self, config):
+        # Import inside __init__ in case our dependencies aren't installed
+        import RPi.GPIO as GPIO
+        from mfrc522 import MFRC522
         self.reader = MFRC522(**config)
         atexit.register(GPIO.cleanup)
 
