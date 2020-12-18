@@ -26,19 +26,15 @@ class MFRC522Reader:
             stop_time = time.time() + timeout
 
         id = self._read_id_no_block()
-        print(id)
         while not id and stop_time != time.time():
             id = self._read_id_no_block()
-            print(id)
         return id
 
     def _read_id_no_block(self):
         (status, TagType) = self.reader.MFRC522_Request(self.reader.PICC_REQIDL)
-        print(status, self.reader.MI_OK)
         if status != self.reader.MI_OK:
             return None
         (status, uid) = self.reader.MFRC522_Anticoll()
-        print(status, uid)
         if status != self.reader.MI_OK:
             return None
         return self._uid_to_num(uid)
