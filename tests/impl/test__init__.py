@@ -22,6 +22,8 @@ from rfidreader.impl import load_impl
 @patch('rfidreader.impl.import_module')
 @patch('rfidreader.impl.iter_modules')
 def test_load_impl(iter_modules, import_module, reader_type, import_module_return_value, expected_reader_class):
+    # Make sure that the modules under mocks are imported
+    from mocks import mock_impl, not_an_impl  # noqa: F401
     import rfidreader.impl as real_pkg
     iter_modules.return_value = pkgutil.iter_modules(path=mocks.__path__)
     import_module.return_value = get_by_name(mocks, import_module_return_value)
@@ -61,6 +63,6 @@ mocks = import_mocks()
 def get_by_name(base, names):
     rv = base
     for name in names:
-        rv = getattr(base, name)
+        rv = getattr(rv, name)
 
     return rv
