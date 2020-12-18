@@ -14,33 +14,27 @@ class MockReaderImpl:
         return 'Event'
 
 
-CONFIG = {}
-MOCK_READER = MockReaderImpl
-READERS = {'mock': MOCK_READER}
-
-
-@patch('rfidreader.reader.register_readers')
-def test_RFIDReader___init__(register_readers):
-    register_readers.return_value = READERS
-    reader = RFIDReader('mock', CONFIG)
-    assert reader.config == CONFIG
-    assert reader.readers == READERS
+@patch('rfidreader.reader.load_impl')
+def test_RFIDReader___init__(load_impl):
+    load_impl.return_value = MockReaderImpl({})
+    reader = RFIDReader('mock', {})
+    assert reader.config == {}
     assert isinstance(reader.reader, MockReaderImpl)
-    register_readers.assert_called_once_with()
+    load_impl.assert_called_once_with('mock', {})
 
 
-@patch('rfidreader.reader.register_readers')
-def test_RFIDReader___init___missing_type(register_readers):
-    register_readers.return_value = READERS
+@patch('rfidreader.reader.load_impl')
+def test_RFIDReader___init___missing_type(load_impl):
+    load_impl.return_value = None
     with pytest.raises(RFIDReaderTypeException):
-        RFIDReader('notmock', CONFIG)
-    register_readers.assert_called_once_with()
+        RFIDReader('notmock', {})
+    load_impl.assert_called_once_with('notmock', {})
 
 
-@patch('rfidreader.reader.register_readers')
-def test_RFIDReader_read(register_readers):
-    register_readers.return_value = READERS
-    reader = RFIDReader('mock', CONFIG)
+@patch('rfidreader.reader.load_impl')
+def test_RFIDReader_read(load_impl):
+    load_impl.return_value = MockReaderImpl({})
+    reader = RFIDReader('mock', {})
     event = reader.read(25)
     assert event == 'Event'
     assert reader.reader.read_called is True

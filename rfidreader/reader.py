@@ -1,5 +1,5 @@
 from rfidreader.exception import RFIDReaderTypeException
-from rfidreader.impl import register_readers
+from rfidreader.impl import load_impl
 
 
 class RFIDReader:
@@ -10,10 +10,8 @@ class RFIDReader:
     """
     def __init__(self, reader_type, config):
         self.config = config
-        self.readers = register_readers()
-        if reader_type in self.readers:
-            self.reader = self.readers[reader_type](config)
-        else:
+        self.reader =load_impl(reader_type, config)
+        if not self.reader:
             raise RFIDReaderTypeException(f'Could not find a registered reader for "{reader_type}"')
 
     def read(self, timeout=None):
