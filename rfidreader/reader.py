@@ -10,7 +10,7 @@ class RFIDReader:
     """
     def __init__(self, reader_type, config):
         self.config = config
-        self.reader =load_impl(reader_type, config)
+        self.reader = load_impl(reader_type, config)
         if not self.reader:
             raise RFIDReaderTypeException(f'Could not find a registered reader for "{reader_type}"')
 

@@ -4,7 +4,7 @@ import sys
 import importlib.util
 
 import pytest
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 from rfidreader.impl import load_impl
 
@@ -23,8 +23,6 @@ from rfidreader.impl import load_impl
 @patch('rfidreader.impl.iter_modules')
 def test_load_impl(iter_modules, import_module, reader_type, import_module_return_value, expected_reader_class):
     import rfidreader.impl as real_pkg
-    from mocks import mock_impl
-    from mocks import not_an_impl
     iter_modules.return_value = pkgutil.iter_modules(path=mocks.__path__)
     import_module.return_value = get_by_name(mocks, import_module_return_value)
     reader = load_impl(reader_type, {})
@@ -59,9 +57,10 @@ def load_from_path(name, path):
 # Only import it once or the code won't work
 mocks = import_mocks()
 
+
 def get_by_name(base, names):
     rv = base
     for name in names:
-        base = getattr(base, name)
+        rv = getattr(base, name)
 
-    return base
+    return rv

@@ -33,7 +33,7 @@ def _raw_event(value=1, code=11):
 @patch('rfidreader.impl.evdev.select')
 @patch('rfidreader.impl.evdev.evdev')
 def test_EvdevReader___init__(evdev, select, event_ready_timeout, device_name):
-    config={}
+    config = {}
     if event_ready_timeout:
         config['event_ready_timeout'] = event_ready_timeout
     if device_name:
