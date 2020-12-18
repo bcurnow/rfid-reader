@@ -3,29 +3,38 @@ import pkgutil
 import sys
 import importlib.util
 
+import pytest
 from unittest.mock import call, patch
 
-from rfidreader.impl import register_readers
+from rfidreader.impl import load_impl
 
 
+@pytest.mark.parametrize(
+    ('reader_type', 'import_module_return_value', 'expected_reader_class'),
+    [
+
+        ('mock_impl', ('mock_impl',), ('mock_impl', 'MockReader')),
+        ('unknown_type', (), None),
+        ('not_an_impl', ('not_an_impl',), None),
+    ],
+    ids=['found', 'module notfound', 'found no register']
+    )
 @patch('rfidreader.impl.import_module')
 @patch('rfidreader.impl.iter_modules')
-def test_register_readers(iter_modules, import_module):
+def test_load_impl(iter_modules, import_module, reader_type, import_module_return_value, expected_reader_class):
     import rfidreader.impl as real_pkg
-    mocks = import_mocks()
-    import mocks.mock_impl
-    import mocks.not_an_impl
+    from mocks import mock_impl
+    from mocks import not_an_impl
     iter_modules.return_value = pkgutil.iter_modules(path=mocks.__path__)
-    import_module.side_effect = [mocks.mock_impl, mocks.not_an_impl]
-    readers = register_readers()
-    assert len(readers) == 1
-    assert 'mock' in readers
-    assert readers['mock'] == mocks.mock_impl.MockReader
+    import_module.return_value = get_by_name(mocks, import_module_return_value)
+    reader = load_impl(reader_type, {})
+    if expected_reader_class:
+        assert isinstance(reader, get_by_name(mocks, expected_reader_class))
+    else:
+        assert reader is None
     iter_modules.assert_called_once_with(path=real_pkg.__path__)
-    import_module.assert_has_calls([
-        call(f'{real_pkg.__name__}.mock_impl'),
-        call(f'{real_pkg.__name__}.not_an_impl'),
-    ], any_order=False)
+    if expected_reader_class:
+        import_module.assert_called_once_with(f'{real_pkg.__name__}.{reader_type}')
 
 
 def import_mocks():
@@ -45,3 +54,14 @@ def load_from_path(name, path):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+# Only import it once or the code won't work
+mocks = import_mocks()
+
+def get_by_name(base, names):
+    rv = base
+    for name in names:
+        base = getattr(base, name)
+
+    return base
