@@ -5,8 +5,7 @@ from rfidreader.reader import RFIDReader, RFIDReaderTypeException
 
 
 class MockReaderImpl:
-    def __init__(self, device_name, ctx):
-        self.device_name = device_name
+    def __init__(self, ctx):
         self.ctx = ctx
 
     def read(self, timeout):
@@ -15,34 +14,34 @@ class MockReaderImpl:
         return 'Event'
 
 
-DEVICE_NAME = 'test'
-CTX = {}
-MOCK_READER = MockReaderImpl(DEVICE_NAME, CTX)
+CONFIG = {}
+MOCK_READER = MockReaderImpl
 READERS = {'mock': MOCK_READER}
 
 
 @patch('rfidreader.reader.register_readers')
 def test_RFIDReader___init__(register_readers):
     register_readers.return_value = READERS
-    reader = RFIDReader('mock', DEVICE_NAME, CTX)
+    reader = RFIDReader('mock', CONFIG)
+    assert reader.config == CONFIG
     assert reader.readers == READERS
-    assert reader.reader == MOCK_READER
-    register_readers.assert_called_once_with(DEVICE_NAME, CTX)
+    assert isinstance(reader.reader, MockReaderImpl)
+    register_readers.assert_called_once_with()
 
 
 @patch('rfidreader.reader.register_readers')
 def test_RFIDReader___init___missing_type(register_readers):
     register_readers.return_value = READERS
     with pytest.raises(RFIDReaderTypeException):
-        RFIDReader('notmock', DEVICE_NAME, CTX)
-    register_readers.assert_called_once_with(DEVICE_NAME, CTX)
+        RFIDReader('notmock', CONFIG)
+    register_readers.assert_called_once_with()
 
 
 @patch('rfidreader.reader.register_readers')
 def test_RFIDReader_read(register_readers):
     register_readers.return_value = READERS
-    reader = RFIDReader('mock', DEVICE_NAME, CTX)
+    reader = RFIDReader('mock', CONFIG)
     event = reader.read(25)
     assert event == 'Event'
-    assert MOCK_READER.read_called is True
-    assert MOCK_READER.read_timeout == 25
+    assert reader.reader.read_called is True
+    assert reader.reader.read_timeout == 25
