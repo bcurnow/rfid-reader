@@ -1,5 +1,5 @@
-def register():
-    return ('mock', MockReader)
+def register(config):
+    return MockReader(config)
 
 
 class MockReader:
