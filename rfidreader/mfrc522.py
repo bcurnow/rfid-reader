@@ -22,9 +22,9 @@ class MFRC522:
         ControlReg = 0x0C  # miscellaneous control registers
         BitFramingReg = 0x0D  # adjustments for bit-oriented frames
         ModeReg = 0x11  # defines general modes for transmitting and receiving
-        TxModeReg = 0x12  # defines transmission data rate and framing
         TxControlReg = 0x14  # controls the logical behavior of the antenna driver pins TX1 and TX2
         TxASKReg = 0x15  # controls the setting of the transmission modulation
+        TModeReg = 0x2A
         TPrescalerReg = 0x2B  # defines settings for the internal timer
         TReloadRegH = 0x2C  # defines the 16-bit timer reload MSB value
         TReloadRegL = 0x2D  # defines the 16-bit timer reload LSB value
@@ -80,21 +80,19 @@ class MFRC522:
     def initialize_card(self):
         self.soft_reset()
 
-        # Setup data transfer rate
-        # 0x8D ==  1000 1101
-        # 101 - Reserved (not sure why we're sending 101 instead of 000)
-        # 1   - InvMod - modulation of transmitted data is inverted
-        # 000 - TxSpeed - 106 kBd
-        # 1   - TxCRCEn - enables CRC generation during data transmission
-        self.write(MFRC522.Register.TxModeReg, 0x8D)
-
-
         # Setup the timer
-        # The two time sections below will set the timer value to: ~.0002 of a second
+        # The two time sections below will set the timer value to: ~0.015 seconds
+
+        # 0x8D ==  1000 1101
+        # 1101 - The high 4 bits of TPrescaler
+        # 0    - TAutoRestart - timer automatically restarts its count-down from the 16-bit timer reload value instead of counting down to zero
+        # 00   - TGated - non-gated mode
+        # 1    - TAuto - timer starts automatically at the end of the transmission in all communication modes at all speeds
+        # Setting the 4 high bits of TPrescaler to 0xD (13), leaving other values unset
+        self.write(MFRC522.Register.TModeReg, 0x8D)
 
         # 0x3E == 0011 1110  - these are the lower 8 bits of the TPrescaler value
-        # (we're ignoring the 4 upper bits, assume they are 0 (zero))
-        # This sets the TPrescale value to 62
+        # This sets the TPrescale value to 3390
         self.write(MFRC522.Register.TPrescalerReg, 0x3E)
 
         # Setup the timer reload value
@@ -132,6 +130,7 @@ class MFRC522:
         register: The register to read from
         """
         val = self.spi.xfer2([self._register_to_read(register), 0])
+        print('read val:', val)
         return val[1]
 
     def write(self, register, value):
@@ -196,6 +195,7 @@ class MFRC522:
         if ((status != MFRC522.ErrorCode.OK) | (results_len != 16)):
             status = MFRC522.ErrorCode.ERR
 
+        print('card_present:', status, results, results_len)
         return (status, results, results_len)
 
     def transceive(self, data):
@@ -243,7 +243,7 @@ class MFRC522:
         # A value of 0x80 (1000 0000) sets the StartSend bit to 1 to start the transmission of data
         self.set_bits(MFRC522.Register.BitFramingReg, 0x80)
 
-        # Wait for command to finish (.4 seconds)
+        # wait for input for 30 seconds (2000 * .015 seconds)
         countdown = 2000
         tx_rx_bitmask = 0x30
 
@@ -261,6 +261,7 @@ class MFRC522:
         status = MFRC522.ErrorCode.ERR
         results = []
         results_len = 0
+        # Check if we timed out (countdown == 0)
         if countdown != 0:
             # ErrorReg:
             # [0] - ProtocolErr
@@ -305,6 +306,7 @@ class MFRC522:
         # Make sure we aren't sending data
         self.write(MFRC522.Register.BitFramingReg, 0x00)
 
+        # TODO why 0x20?
         data = [MFRC522.PICCCommand.ANTICOLL, 0x20]
         (status, results, results_len) = self.transceive(data)
 
