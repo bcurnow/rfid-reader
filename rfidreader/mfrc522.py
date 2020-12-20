@@ -387,7 +387,7 @@ class MFRC522:
                 bytes_to_copy = max_bytes
 
             select_finished = False
-            while !select_finished:
+            while not select_finished:
                 if known_bits >= 32:  # We've got all the bits we're going to get for this cascade level, time to select
                     data.append(cascade_level)
                     data.append(MFRC522.NVB_SEVEN_BYTES)  # command, NVB, 4 bytes of UID (or CT + 3 bytes) and the BCC
