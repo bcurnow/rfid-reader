@@ -57,8 +57,7 @@ class MFRC522:
 
             If you now drop the MSB and LSB you're left with 000011 which is still 0x03
             """
-            print(self, self << 1)
-            return (self.value << 1) & 0x7E
+            return (self << 1) & 0x7E
 
 
     @unique
