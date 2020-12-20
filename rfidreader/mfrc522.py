@@ -480,7 +480,7 @@ class MFRC522:
             # Check if the cascade bit is set
             if results[0] & 0b00000100:
                 cascade_level = _next_cascade_level()
-            else
+            else:
                 finished = True
 
         return (MFRC522.ErrorCode.OK, uid)
