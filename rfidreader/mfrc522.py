@@ -37,7 +37,7 @@ class MFRC522:
             We use the write method first and then bitwise OR with 1000 0000
             to ensure that the MSB is 1.
             """
-            return self.write() | 0b10000000
+            return self.write() | MFRC522.BIT_MASK_MSB
 
         def write(self):
             """
@@ -57,7 +57,7 @@ class MFRC522:
 
             If you now drop the MSB and LSB you're left with 000011 which is still 0x03
             """
-            return (self << 1) & 0b01111110
+            return (self << 1) & MFRC522.BIT_MASK_REGISTER
 
 
     @unique
@@ -78,13 +78,38 @@ class MFRC522:
     @unique
     class PICCCommand(IntEnum):
         """ proximity inductive coupling card (PICC) commands """
-        REQIDL = 0x26  # Is there a card in the field?
+        REQA = 0x26  # Is there a card in the field?
         ANTICOLL = 0x93  # Anti-collision
 
     MAX_SPEED_HZ = 106000  # 106 kBd - see initialize_card()
     FIFO_BUFFER_MAX_SIZE = 64  # The size (in bytes) of the FIFO buffer
-    THIRTY_SECONDS = 2000  # The internal time is configured to ~ 0.015 seconds, 2000 * 0.015 = 30 (seconds)
+    TRANSCEIVE_IRQ_CHECKS = 2000  # The number of times to check the IRQs before giving up
     BITS_IN_BYTE = 8  # The number of bits in a byte
+    NVD_DEFAULT = 0x20  # 0010 0000 -  This is the default starting point for the NVD bit.
+                        # The upper 4 bits (byte count) indicate that number of bytes we're sending (set to 2)
+                        # The lower 4 bits (bit count) indicates the number of bits we sending modulo 8
+    BIT_MASK_ANTENNA_POWER = 0b00000011  # A bit mask for [0] and [1] (Tx1RFEn, Tx2RFEn) which indicate the current power state of the antenna
+    BIT_MASK_COMIRQ_TX_RX = 0b00110000  # Bit mask for the TX and RX interrupts
+    BIT_MASK_LSB = 0b00000001  # The least signficant bit
+    BIT_MASK_MSB = 0b10000000  # The most significant bit
+    BIT_MASK_REGISTER = 0b01111110  # A bit mask for the six-digit register values (dropping MSB and LSB)
+    BIT_MASK_TRANCEIVE_ERRORS = 0b00011011  # A bit maks for protocol [0], partity [1], collision [3] or buffer overflow [4] errors
+    BIT_MASK_TRANSCEIVE_IRQ = 0b11110111  # Turns on/maks all the interrupts except for HiAlertIEn ([3])
+
+    GPIO_BCM_RST_DEFAULT = 15  # The default RST pin (GPIO 15) when gpio_mode is set to GPIO.BCM
+    GPIO_BOARD_RST_DEFAULT = 22  # The default RST pin (GPIO 25) when gpio_mode is set to GPIO.BOARD (the default)
+
+    TPRESCALER_HIGH_FOUR = 0b10001101  # Sets the value of TPrescaler's high 4 bits (out of 12)
+    TPRESCLER_LOW_EIGHT = 0b00111110  # Sets the value of the TPrescaler's low 8 bits (out of 12)
+    TRELOAD_HIGH_EIGHT = 0b00000000  # The high 8 bits of the TReload value
+    TRELOAD_LOW_EIGHT = 0b00011110  # The low 8 bits of the TReload value
+    ASK_MODULATION = 0b01000000  # Force a 100% ASK modulation by setting [6] = 1
+    MODE_DEFAULTS = 0b00111101          # Set the CRC preset value to 0x6363 [0]-[1]
+                                        # Set the polarity of MFIN to HIGH [3]
+                                        # Ensure the transmitter can only be started if an RF field is generated [5]
+                                        # Set MSBFirst to false
+                                        # Other bits are reserved and therefore left at 0
+    BIT_FRAMING_SEND_ALL_BITS = 0b00000111  # Set TxLastBits to 7 ensuring that all the bits will be transmitted
 
 
     def __init__(self, bus=0, device=0, gpio_mode=GPIO.BOARD, rst_pin=None):
@@ -96,9 +121,9 @@ class MFRC522:
 
         if not rst_pin:  # auto set based on GPIO mode
             if gpio_mode == GPIO.BCM:
-                rst_pin = 15  # Defaults to GPIO 15 (BOARD pin 10)
+                rst_pin = MFRC522.GPIO_BCM_RST_DEFAULT
             else:
-                rst_pin = 22  # Defaults to GPIO 25 (BOARD pin 22)
+                rst_pin = MFRC522.GPIO_BOARD_RST_DEFAULT
 
         # Setup the reset pin as an output
         GPIO.setup(rst_pin, GPIO.OUT)
@@ -123,26 +148,17 @@ class MFRC522:
         #        13,560,000 (13.56 Mhz)
 
         # Set the 4 high bits of the TPrescaler to 1101 (13) and setting TAuto to start the timer automatically at the end of the transmission
-        self.write(MFRC522.Register.TModeReg, 0b10001101)
+        self.write(MFRC522.Register.TModeReg, MFRC522.TPRESCALER_HIGH_FOUR)
 
         # Set the lower 8 bits of the TPrescaler to 62. This makes the TPrescaler value (12-bits) = 3390
-        self.write(MFRC522.Register.TPrescalerReg, 62)
+        self.write(MFRC522.Register.TPrescalerReg, MFRC522.TPRESCLER_LOW_EIGHT)
 
         # Setup the timer reload value
         # Sets the TReload value to 30
-        self.write(MFRC522.Register.TReloadRegL, 30)
-        self.write(MFRC522.Register.TReloadRegH, 0)
-
-        # force a 100% ASK modulation by setting [6] = 1
-        self.write(MFRC522.Register.TxASKReg, 0b01000000)
-
-
-        # Set the CRC preset value to 0x6363 [0]-[1]
-        # Set the polarity of MFIN to HIGH [3]
-        # Ensure the transmitter can only be started if an RF field is generated [5]
-        # Set MSBFirst to false
-        # Other bits are reserved and therefore left at 0
-        self.write(MFRC522.Register.ModeReg, 0b00111101)
+        self.write(MFRC522.Register.TReloadRegL, MFRC522.TRELOAD_LOW_EIGHT)
+        self.write(MFRC522.Register.TReloadRegH, MFRC522.TRELOAD_HIGH_EIGHT)
+        self.write(MFRC522.Register.TxASKReg, MFRC522.ASK_MODULATION)
+        self.write(MFRC522.Register.ModeReg, MFRC522.MODE_DEFAULTS)
 
         self.antenna_on()
 
@@ -174,9 +190,9 @@ class MFRC522:
         # To determine the state of the antenna, we only need [0] and [1] (Tx1RFEn, Tx2RFEn) so AND with 3
         # If either of the first two bits are 0 (zero), then the antenna is off
         # By bitwise NOT'ing the value, we can check if the result is zero or not, if not zero, then it wasn't on
-        if (~(current & 0b00000011)):
+        if (~(current & MFRC522.BIT_MASK_ANTENNA_POWER)):
             # Set both Tx1RFEn, Tx2RFEn to 1 to turn the antenna on
-            self.set_bits(MFRC522.Register.TxControlReg, 0b00000011)
+            self.set_bits(MFRC522.Register.TxControlReg, MFRC522.BIT_MASK_ANTENNA_POWER)
 
     def set_bits(self, register, mask):
         """ Reads the current value and then sets the specified bits to 1 """
@@ -191,29 +207,24 @@ class MFRC522:
         self.write(register, current & (~mask))
 
     def card_present(self):
-        # Set TxLastBits to 7 ensuring that all the bits will be transmitted
-        self.write(MFRC522.Register.BitFramingReg, 0b00000111)
+        self.write(MFRC522.Register.BitFramingReg, MFRC522.BIT_FRAMING_SEND_ALL_BITS)
 
-        (status, results, results_len) = self.transceive([MFRC522.PICCCommand.REQIDL])
+        (status, results, results_len) = self.transceive([MFRC522.PICCCommand.REQA])
 
-        # TODO covert status to boolean, determine if we need the results or len for anything else
-        # We need both an error code of OK and for the lenth of the results to be 16 in order to proceedA
-        print('REQIDL', results, results_len)
-        if ((status != MFRC522.ErrorCode.OK) | (results_len != 16)):
-            status = MFRC522.ErrorCode.ERR
-
-        return (status, results, results_len)
+        # According to the NXP docs the result of REQA should be ignored
+        # We need both an error code of OK and for the lenth of the results to be 16 (2 bytes) in order to proceedA
+        if status == MFRC522.ErrorCode.OK and results_len == 16:
+            return True
+        return False
 
     def transceive(self, data):
-        # Turn on all interrupts except for HiAlertIEn ()
-        irq_bitmask = 0b11110111
-        self.write(MFRC522.Register.ComIEnReg, irq_bitmask)
+        self.write(MFRC522.Register.ComIEnReg, MFRC522.BIT_MASK_TRANSCEIVE_IRQ)
 
         # Set the Set1 bit ([7]) to 0 which clears the register
-        self.unset_bits(MFRC522.Register.ComIrqReg, 0b10000000)
+        self.unset_bits(MFRC522.Register.ComIrqReg, MFRC522.BIT_MASK_MSB)
 
         # Flush the FIFO buffer (set FlushBuffer ([7]) to 1)
-        self.set_bits(MFRC522.Register.FIFOLevelReg, 0b10000000)
+        self.set_bits(MFRC522.Register.FIFOLevelReg, MFRC522.BIT_MASK_MSB)
 
         # Idle the card, cancelling any current commands
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.IDLE)
@@ -226,41 +237,34 @@ class MFRC522:
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.TRANSCEIVE)
 
         # Set StartSend to 1 to start the transmission of data
-        self.set_bits(MFRC522.Register.BitFramingReg, 0b10000000)
+        self.set_bits(MFRC522.Register.BitFramingReg, MFRC522.BIT_MASK_MSB)
 
-        countdown = THIRTY_SECONDS
-        tx_rx_bitmask = 0b00110000
+        countdown = MFRC522.TRANSCEIVE_IRQ_CHECKS
 
         while True:
             # Read the current status of the interrupts from the register
             interrupts = self.read(MFRC522.Register.ComIrqReg)
-            print(countdown)
             countdown -= 1
-            #print(countdown != 0, interrupts & 0x01, interrupts & tx_rx_bitmask)
-            #print(~((countdown != 0) and (interrupts & 0x01) and (interrupts & tx_rx_bitmask)))
             # The LSB in interrupts is the timer IRQ, if set, indicates the timer finshed a cycle
-            # Bits [4] and [5] indicate that TX and RX are complete
-            # while ((i!=0) && !(n&0x01) && !(n&waitIRq));
-            print(interrupts)
-            if ~((countdown != 0) and ~(interrupts & 0b00000001) and ~(interrupts & tx_rx_bitmask)):
+            if ~((countdown != 0) and ~(interrupts & MFRC522.BIT_MASK_LSB) and ~(interrupts & MFRC522.BIT_MASK_COMIRQ_TX_RX)):
                 break
 
         # Stop sending (set StartSend to 0)
-        self.unset_bits(MFRC522.Register.BitFramingReg, 0b10000000)
+        self.unset_bits(MFRC522.Register.BitFramingReg, MFRC522.BIT_MASK_MSB)
 
         status = MFRC522.ErrorCode.ERR
         results = []
         results_len = 0
         # Check if we timed out (countdown == 0)
         if countdown != 0:
-            # Check to see if there are any protocol [0], partity [1], collision[3] or buffer overflow errors[4]
-            if (self.read(MFRC522.Register.ErrorReg) & 0b00011011):
+            # Check to see if there are any protocol, partity, collision or buffer overflow errors
+            if (self.read(MFRC522.Register.ErrorReg) & MFRC522.BIT_MASK_TRANCEIVE_ERRORS) == 0:
                 status = MFRC522.ErrorCode.OK
 
                 # Check to see if the timer counted down
-                # Filter the interrupts for only the ones we care about (& irq_bitmaks)
+                # Filter the interrupts for only the ones we care about (& BIT_MASK_TRANSCEIVE_IRQ)
                 # Then specifically look at the LSB as it indicates a timer interrupt
-                if interrupts & irq_bitmask & 0b00000001:
+                if interrupts & MFRC522.BIT_MASK_TRANSCEIVE_IRQ & MFRC522.BIT_MASK_LSB:
                     status = MFRC522.ErrorCode.NOTAGERR
 
                 # Check how many bytes were written to the FIFO
@@ -268,9 +272,9 @@ class MFRC522:
                 # Check [0][1][2] to see how many valid bits in the last byte (0 (zero) indicates the whole byte is valid)
                 bits_in_last_byte = self.read(MFRC522.Register.ControlReg) & 0b00000111
                 if bits_in_last_byte != 0:
-                    results_len = (bytes_written - 1) * BITS_IN_BYTE + bits_in_last_byte
+                    results_len = (bytes_written - 1) * MFRC522.BITS_IN_BYTE + bits_in_last_byte
                 else:
-                    results_len = bytes_written * BITS_IN_BYTE
+                    results_len = bytes_written * MFRC522.BITS_IN_BYTE
 
                 if bytes_written == 0:
                     # Always the current value of the buffer
@@ -290,8 +294,7 @@ class MFRC522:
         # Reset the the bit-oriented frame settings
         self.write(MFRC522.Register.BitFramingReg, 0b00000000)
 
-        # TODO why 0x20?
-        data = [MFRC522.PICCCommand.ANTICOLL, 0x20]
+        data = [MFRC522.PICCCommand.ANTICOLL, MFRC522.NVD_DEFAULT]
         (status, results, results_len) = self.transceive(data)
 
         if (status == MFRC522.ErrorCode.OK):
