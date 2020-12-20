@@ -4,7 +4,7 @@ so that it's better commented and suited specifically for what this library requ
 The additional documentation comes from NXP's data-sheet on the MFRC522: https://www.nxp.com/docs/en/data-sheet/MFRC522.pdf
 """
 import atexit
-from enum import Enum
+from enum import IntEnum, unique
 
 import RPi.GPIO as GPIO
 import spidev
@@ -12,7 +12,8 @@ import spidev
 
 
 class MFRC522:
-    class Register(Enum):
+    @unique
+    class Register(IntEnum):
         CommandReg = 0x01  # starts and stops command execution
         ComIEnReg = 0x02  # enable and disable interrupt request control bits
         ComIrqReg = 0x04  # interrupt request bits
@@ -29,20 +30,54 @@ class MFRC522:
         TReloadRegH = 0x2C  # defines the 16-bit timer reload MSB value
         TReloadRegL = 0x2D  # defines the 16-bit timer reload LSB value
 
+        def read(self):
+            """
+            Registers are represented by a 6-bit value where the LSB is always 0 (zero)
+            and the MSB indicates the mode: 0 for write, 1 for read.
+            We use the write method first and then bitwise OR with 0x80 (1000 0000)
+            to ensure that the MSB is 1.
+            """
+            return self.write() | 0x80
 
-    class PCDCommand(Enum):
+        def write(self):
+            """
+            Registers are represented by a 6-bit value where the LSB is always 0 (zero)
+            and the MSB indicates the mode: 0 for write, 1 for read.
+            To ensure that the LSB is always zero, we bit shift 1 place to the left.
+            To ensure that the MSB is 0, we bitwise AND with 0x7E (0111 1110)
+            Example:
+              register = 0x03 = 0000 0011
+              bit shift << 1 = 0000 0110
+              AND with 0x7E
+
+                0000 0110
+              & 0111 1110
+              -----------
+                0000 0110
+
+            If you now drop the MSB and LSB you're left with 000011 which is still 0x03
+            """
+            print(self, self << 1)
+            return (self.value << 1) & 0x7E
+
+
+    @unique
+    class PCDCommand(IntEnum):
         """ proximity coupling device (PCD) commands """
         IDLE = 0x00
         TRANSCEIVE = 0x0C
         SOFT_RESET = 0x0F
 
 
-    class ErrorCode(Enum):
+    @unique
+    class ErrorCode(IntEnum):
         OK = 0  # everything is OK
         NOTAGERR = 1  # There was no tag to read
         ERR = 2  # Something went wrong
 
-    class PICCCommand(Enum):
+
+    @unique
+    class PICCCommand(IntEnum):
         """ proximity inductive coupling card (PICC) commands """
         REQIDL = 0x26  # Is there a card in the field?
         ANTICOLL = 0x93  # Anti-collision
@@ -138,9 +173,7 @@ class MFRC522:
         register: The register to write to
         value: The value to write
         """
-        if type(value) == MFRC522.PCDCommand or type(value) == MFRC522.PICCCommand:
-            value = value.value
-        self.spi.xfer2([self._register_to_write(register), value])
+        self.spi.xfer2([register.write(), value])
 
     def antenna_on(self):
         # Read the current configuration from the register
@@ -321,32 +354,3 @@ class MFRC522:
                 status = MFRC522.ErrorCode.ERR
 
         return (status, results, results_len)
-
-    def _register_to_read(self, register):
-        """
-        Registers are represented by a 6-bit value where the LSB is always 0 (zero)
-        and the MSB indicates the mode: 0 for write, 1 for read.
-        We use the _register_to_write method first and then bitwise OR with 0x80 (1000 0000)
-        to ensure that the MSB is 1.
-        """
-        return self._register_to_write(register) | 0x80
-
-    def _register_to_write(self, register):
-        """
-        Registers are represented by a 6-bit value where the LSB is always 0 (zero)
-        and the MSB indicates the mode: 0 for write, 1 for read.
-        To ensure that the LSB is always zero, we bit shift 1 place to the left.
-        To ensure that the MSB is 0, we bitwise AND with 0x7E (0111 1110)
-        Example:
-          register = 0x03 = 0000 0011
-          bit shift << 1 = 0000 0110
-          AND with 0x7E
-
-            0000 0110
-          & 0111 1110
-          -----------
-            0000 0110
-
-        If you now drop the MSB and LSB you're left with 000011 which is still 0x03
-        """
-        return (register.value << 1) & 0x7E
