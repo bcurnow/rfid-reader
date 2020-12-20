@@ -164,7 +164,7 @@ class MFRC522:
         Reads a value from the card.
         register: The register to read from
         """
-        val = self.spi.xfer2([self._register_to_read(register), 0])
+        val = self.spi.xfer2([register.read(), 0])
         return val[1]
 
     def write(self, register, value):
