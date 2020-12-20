@@ -479,7 +479,7 @@ class MFRC522:
 
             # Check if the cascade bit is set
             if results[0] & 0b00000100:
-                cascade_level++
+                cascade_level = _next_cascade_level()
             else
                 finished = True
 
@@ -520,3 +520,9 @@ class MFRC522:
         # Write the data to the FIFO Data register
         for datum in data:
             self.write(MFRC522.Register.FIFODataReg, datum)
+
+    def _next_cascade_level(self, cascade_level):
+        if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS1:
+            return MFRC522.PCDCommand.ANTICOLL_CS2
+        if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS2:
+            return MFRC522.PCDCommand.ANTICOLL_CS3
