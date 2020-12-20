@@ -92,7 +92,7 @@ class MFRC522:
         REQA = 0x26  # Is there a card in the field?
         ANTICOLL_CS1 = 0x93  # Anti-collision cascade level 1
         ANTICOLL_CS2 = 0x95  # Anti-collision cascade level 2
-        ANTICOLL_CS3 = 0x95  # Anti-collision cascade level 3
+        ANTICOLL_CS3 = 0x97  # Anti-collision cascade level 3
 
     MAX_SPEED_HZ = 106000  # 106 kBd - see initialize_card()
     FIFO_BUFFER_MAX_SIZE = 64  # The size (in bytes) of the FIFO buffer
