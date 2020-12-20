@@ -340,7 +340,7 @@ class MFRC522:
         # If we reached this point, all the checks have passed, we can return OK
         return (MFRC522.ErrorCode.OK, results, results_len)
 
-    def anticollision(self, cascade_level = MFRC522.PCDCommand.ANTICOLL_CS1, uid=[], valid_bits=0):
+    def anticollision(self, cascade_level=MFRC522.PCDCommand.ANTICOLL_CS1, uid=[], valid_bits=0):
         self._clear_bits_after_collision()
 
         finished = False
