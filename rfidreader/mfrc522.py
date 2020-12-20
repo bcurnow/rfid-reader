@@ -17,7 +17,9 @@ class MFRC522:
         CommandReg = 0x01  # starts and stops command execution
         ComIEnReg = 0x02  # enable and disable interrupt request control bits
         ComIrqReg = 0x04  # interrupt request bits
+        DivIrqReg = 0x05  # interrupt request bits for CRC
         ErrorReg = 0x06  # error bits showing the error status of the last command executed
+        Status1Reg = 0x07  # Status register for various commands
         FIFODataReg = 0x09  # input and output of 64 byte FIFO buffer
         FIFOLevelReg = 0x0A  # number of bytes stored in the FIFO buffer
         ControlReg = 0x0C  # miscellaneous control registers
@@ -25,6 +27,8 @@ class MFRC522:
         ModeReg = 0x11  # defines general modes for transmitting and receiving
         TxControlReg = 0x14  # controls the logical behavior of the antenna driver pins TX1 and TX2
         TxASKReg = 0x15  # controls the setting of the transmission modulation
+        CRCResultRegH = 0x21  # The MSB of the CRC result
+        CRCResultRegL = 0x22  # The LSB of the CRC result
         TModeReg = 0x2A  # timer settings
         TPrescalerReg = 0x2B  # defines settings for the internal timer
         TReloadRegH = 0x2C  # defines the 16-bit timer reload MSB value
@@ -63,9 +67,10 @@ class MFRC522:
     @unique
     class PCDCommand(IntEnum):
         """ proximity coupling device (PCD) commands """
-        IDLE = 0x00
-        TRANSCEIVE = 0x0C
-        SOFT_RESET = 0x0F
+        IDLE = 0x00  # Stop any in process commands and idle the board
+        CALCCRC = 0x03  # Perform a CRC check
+        TRANSCEIVE = 0x0C  # Tranceive data
+        SOFT_RESET = 0x0F  # Perform a soft reset of the board
 
 
     @unique
@@ -83,13 +88,13 @@ class MFRC522:
 
     MAX_SPEED_HZ = 106000  # 106 kBd - see initialize_card()
     FIFO_BUFFER_MAX_SIZE = 64  # The size (in bytes) of the FIFO buffer
-    TRANSCEIVE_IRQ_CHECKS = 2000  # The number of times to check the IRQs before giving up
     BITS_IN_BYTE = 8  # The number of bits in a byte
     NVD_DEFAULT = 0x20  # 0010 0000 -  This is the default starting point for the NVD bit.
                         # The upper 4 bits (byte count) indicate that number of bytes we're sending (set to 2)
                         # The lower 4 bits (bit count) indicates the number of bits we sending modulo 8
     BIT_MASK_ANTENNA_POWER = 0b00000011  # A bit mask for [0] and [1] (Tx1RFEn, Tx2RFEn) which indicate the current power state of the antenna
     BIT_MASK_COMIRQ_TX_RX = 0b00110000  # Bit mask for the TX and RX interrupts
+    BIT_MASK_DIVIRQ_CRCIRQ = 0b00000100  # Bit mask for the CRCIRq flag in the DivIrqReg
     BIT_MASK_LSB = 0b00000001  # The least signficant bit
     BIT_MASK_MSB = 0b10000000  # The most significant bit
     BIT_MASK_REGISTER = 0b01111110  # A bit mask for the six-digit register values (dropping MSB and LSB)
@@ -99,17 +104,43 @@ class MFRC522:
     GPIO_BCM_RST_DEFAULT = 15  # The default RST pin (GPIO 15) when gpio_mode is set to GPIO.BCM
     GPIO_BOARD_RST_DEFAULT = 22  # The default RST pin (GPIO 25) when gpio_mode is set to GPIO.BOARD (the default)
 
-    TPRESCALER_HIGH_FOUR = 0b10001101  # Sets the value of TPrescaler's high 4 bits (out of 12)
-    TPRESCLER_LOW_EIGHT = 0b00111110  # Sets the value of the TPrescaler's low 8 bits (out of 12)
-    TRELOAD_HIGH_EIGHT = 0b00000000  # The high 8 bits of the TReload value
-    TRELOAD_LOW_EIGHT = 0b00011110  # The low 8 bits of the TReload value
+    # The following values configure the timer so the result is a timer delay of 0.025 seconds (~25 miliseconds/)
+    # This done by setting the TPrescaler (12-bits) first 4 bits to 0 and the second 8 to 169 which results in a total value of 169
+    # Then the TReload (16-bits) first 8 bits are set to 3 and the second 8 bits are set 232 which results in a total value of 1000
+    # To get to the delay seconds, the following equation is used:
+    # (TPrescaler * 2 + 1) * (TReload + 1)
+    # ------------------------------------
+    #     13.56 Mhz (13,560,000)
+    # For our values this ends up as:
+    # (169 * 2 + 1) * (1000 + 1) OR
+    # 339 * 1001 OR
+    # 339,339
+    # ----------
+    # 13560000
+    # Which is 0.025025 of a second or 25 miliseconds
+    # NOTE: According to the NXP docs, 339 clock cycles results in a delay of 25 microseconds
+    #       A value of 169 for TPrescaler results in 339 in the equation so the way to think about this is:
+    #       The TPrescaler represents 25 micro seconds the TReload represents how many 25 microsecond time-slots
+    #       to count before triggering the timer IRQ
+    TPRESCALER_HIGH_FOUR = 0b10000000  # Sets the value of TPrescaler's high 4 bits (out of 12) (value = 0)
+    TPRESCLER_LOW_EIGHT = 0b10101001  # Sets the value of the TPrescaler's low 8 bits (out of 12) (value = 169)
+    TRELOAD_HIGH_EIGHT = 0b00000011  # The high 8 bits of the TReload value (value = 3)
+    TRELOAD_LOW_EIGHT = 0b11101000  # The low 8 bits of the TReload value (value = 232)
     ASK_MODULATION = 0b01000000  # Force a 100% ASK modulation by setting [6] = 1
-    MODE_DEFAULTS = 0b00111101          # Set the CRC preset value to 0x6363 [0]-[1]
-                                        # Set the polarity of MFIN to HIGH [3]
-                                        # Ensure the transmitter can only be started if an RF field is generated [5]
-                                        # Set MSBFirst to false
-                                        # Other bits are reserved and therefore left at 0
+    MODE_DEFAULTS = 0b00111101  # Set the CRC preset value to 0x6363 [0]-[1]
+                                # Set the polarity of MFIN to HIGH [3]
+                                # Ensure the transmitter can only be started if an RF field is generated [5]
+                                # Set MSBFirst to false
+                                # Other bits are reserved and therefore left at 0
     BIT_FRAMING_SEND_ALL_BITS = 0b00000111  # Set TxLastBits to 7 ensuring that all the bits will be transmitted
+    IRQ_CHECKS = 2* ((TRELOAD_HIGH_EIGHT << 8) + TRELOAD_LOW_EIGHT)  # This is the number of IRQ checks to make for each command (e.g. TRANSCEIVE, CALCCRC)
+                                                                     # This value is based on the TReload value as this indicates how many 25 microsecond delays
+                                                                     # We want to check the IRQ twice any many times to ensure that our IRQ checking loop is
+                                                                     # longer than the timer time as each time through the look should be ~ 25 microsecond
+                                                                     # To use the TReload value, we need to combine the high and low bits so we shift the
+                                                                     # high eight bits 8 places to the left and then add in the low bits. This results in
+                                                                     # the total value of TReload (e.g. 1000) and allows us to base this constant on a multiple
+                                                                     # of that.
 
 
     def __init__(self, bus=0, device=0, gpio_mode=GPIO.BOARD, rst_pin=None):
@@ -229,9 +260,7 @@ class MFRC522:
         # Idle the card, cancelling any current commands
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.IDLE)
 
-        # Write the data to the FIFO Data register
-        for datum in data:
-            self.write(MFRC522.Register.FIFODataReg, datum)
+        self._write_data_to_fifo(data)
 
         # Run the transceive command
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.TRANSCEIVE)
@@ -239,7 +268,7 @@ class MFRC522:
         # Set StartSend to 1 to start the transmission of data
         self.set_bits(MFRC522.Register.BitFramingReg, MFRC522.BIT_MASK_MSB)
 
-        countdown = MFRC522.TRANSCEIVE_IRQ_CHECKS
+        countdown = MFRC522.IRQ_CHECKS
 
         while True:
             # Read the current status of the interrupts from the register
@@ -309,4 +338,33 @@ class MFRC522:
             else:
                 status = MFRC522.ErrorCode.ERR
 
+        # Make a SAK call
+        self.transceive([])
         return (status, results, results_len)
+
+
+    def calculate_crc(self, data):
+        # Clear the CRC IRQ bit
+        self.unset_bits(MFRC522.Register.DivIrqReg, MFRC522.BIT_MASK_DIVIRQ_CRCIRQ)
+        # Flush the FIFO buffer (set FlushBuffer ([7]) to 1)
+        self.set_bits(MFRC522.Register.FIFOLevelReg, MFRC522.BIT_MASK_MSB)
+        self._write_data_to_fifo(data)
+
+        # Calculate the CRC
+        self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.CALCCRC)
+
+        countdown = MFRC522.IRQ_CHECKS
+        while True:
+            interrupts = self.read(MFRC522.Register.DivIrqReg)
+            countdown -= 1
+            if not ((countdown != 0) and not (n & MFRC522.BIT_MASK_DIVIRQ_CRCIRQ)):
+                break
+        rv = []
+        rv.append(self.read(MFRC522.Register.CRCResultRegL))
+        rv.append(self.read(MFRC522.Register.CRCResultRegH))
+    return rv
+
+    def _write_data_to_fifo(self, data):
+        # Write the data to the FIFO Data register
+        for datum in data:
+            self.write(MFRC522.Register.FIFODataReg, datum)
