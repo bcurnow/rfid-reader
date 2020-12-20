@@ -456,7 +456,7 @@ class MFRC522:
                         uid[len(uid) - 1] = results[0]
                         if new_bytes_found > 0:
                             # There are additional bytes in results[1-n], copy them over
-                            for i in range(start=1, len(results)):
+                            for i in range(start=1, stop=len(results)):
                                 uid.append(results[i])
                     else:
                         # We had only full bytes so everything in results is new, copy it over
