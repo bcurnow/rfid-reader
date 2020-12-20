@@ -24,7 +24,7 @@ class MFRC522:
         ModeReg = 0x11  # defines general modes for transmitting and receiving
         TxControlReg = 0x14  # controls the logical behavior of the antenna driver pins TX1 and TX2
         TxASKReg = 0x15  # controls the setting of the transmission modulation
-        TModeReg = 0x2A
+        TModeReg = 0x2A  # timer settings
         TPrescalerReg = 0x2B  # defines settings for the internal timer
         TReloadRegH = 0x2C  # defines the 16-bit timer reload MSB value
         TReloadRegL = 0x2D  # defines the 16-bit timer reload LSB value
@@ -97,8 +97,8 @@ class MFRC522:
 
         # Setup the timer reload value
         # Sets the TReload value to 30
-        self.write(MFRC522.Register.TReloadRegL, 0x1E)
-        self.write(MFRC522.Register.TReloadRegH, 0x0)
+        self.write(MFRC522.Register.TReloadRegL, 30)
+        self.write(MFRC522.Register.TReloadRegH, 0)
 
         # Setup transmission modulation
         # 0x40 == 0100 0000
@@ -130,7 +130,6 @@ class MFRC522:
         register: The register to read from
         """
         val = self.spi.xfer2([self._register_to_read(register), 0])
-        print('read val:', val)
         return val[1]
 
     def write(self, register, value):
@@ -195,7 +194,6 @@ class MFRC522:
         if ((status != MFRC522.ErrorCode.OK) | (results_len != 16)):
             status = MFRC522.ErrorCode.ERR
 
-        print('card_present:', status, results, results_len)
         return (status, results, results_len)
 
     def transceive(self, data):
