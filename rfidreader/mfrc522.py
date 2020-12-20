@@ -346,11 +346,11 @@ class MFRC522:
         finished = False
         while not finished:
             if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS1:
-                use_cascade_tag = valid_bits && len(uid) > 4
+                use_cascade_tag = valid_bits and len(uid) > 4
                 uid_start_index = 0  # We know nothing yet
 
             if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS2:
-                use_cascade_tag = valid_bits && len(uid) > 7
+                use_cascade_tag = valid_bits and len(uid) > 7
                 uid_start_index = 3  # We know about 4 bytes
 
             if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS3:
