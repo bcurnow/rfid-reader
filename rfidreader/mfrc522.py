@@ -83,6 +83,9 @@ class MFRC522:
         COUNTDOWN_TIMEOUT = 4  # Our countdown completed without the timer going off
         COLLISION = 5  # A collision error happened
         UNKNOWN_COLLISION_ERROR = 6  # A collision happened but the position is within the data we already know which shouldn't be possible
+        INVALID_COLLISION_POSITION = 7  # A collision happened by the result did not provide a valid collision position
+        INVALID_SAK_RESULT = 8  # We successfully completed a SEL but the SAK wasn't the right size/content
+        SAK_CRC_WRONG = 9  # We got a SAK but the CRC value didn't actually check out
 
 
 
@@ -98,6 +101,7 @@ class MFRC522:
     FIFO_BUFFER_MAX_SIZE = 64  # The size (in bytes) of the FIFO buffer
     BITS_IN_BYTE = 8  # The number of bits in a byte
     BIT_MASK_ANTENNA_POWER = 0b00000011  # A bit mask for [0] and [1] (Tx1RFEn, Tx2RFEn) which indicate the current power state of the antenna
+    BIT_MASK_CASCADE_BIT_SET = 0b000001000  # Bit mask to check the SAK for the cascade bit
     BIT_MASK_COLLREG_POSITION_NOT_VALID = 0b00100000  # A bit mask that pulls CollPosNotValid [5]
     BIT_MASK_COLLREG_POSITION = 0b00011111  # A bit amsk that pulls CollPos [0]-[4]
     BIT_MASK_COMIRQ_RX_AND_IDLE = 0b00110000  # Bit mask for the RX (receive) and Idle (command complete) interrupts
@@ -258,7 +262,7 @@ class MFRC522:
         """ Check to see if type A PICC's are in the field. """
         self._clear_bits_after_collision()
         # Setup short frame format bit framing
-        self.write(MFRC522.Register.BitFramingReg, MFRC522.BIT_FRAMING_SHORT_FRAME_FORMATS)
+        self.write(MFRC522.Register.BitFramingReg, MFRC522.BIT_FRAMING_SHORT_FRAME_FORMAT)
         return self.transceive([MFRC522.PICCCommand.REQA])
 
     def transceive(self, data):
@@ -340,106 +344,145 @@ class MFRC522:
         # If we reached this point, all the checks have passed, we can return OK
         return (MFRC522.ErrorCode.OK, results, results_len)
 
-    def anticollision(self, cascade_level=MFRC522.PCDCommand.ANTICOLL_CS1, uid=[], valid_bits=0):
+    def anticollision(self):
+        """
+        This method is called anticollision but it actually implements the entire select/anticollision process.
+        There are three cascade levels to work through (1, 2, 3) (SEL) depending on the size of the uid (4-, 7-, or 10-bytes).
+        The process is started with no information about the PICCs and at cascade level 1. An initial request is made and, if
+        only a single PICC responds, we can move directly onto a select operation. If this succeeds, we check the select acknowledge (SAK)
+        to see if the PICC indicated there were more bytes in the uid. If there are, we move to the next cascade level and start the process
+        again. If not, we have the whole uid and it is returned.
+
+        For reference, here are a couple of terms/acronyms:
+          - SEL -> Select, the actual value of this command changes based on the current level (1, 2, 3)
+          - SAK -> Select acknowledgement, what is returned by the PICC for a full select
+          - NVB -> Number of valid bits, the total number of bytes (high 4 bits) and bits (low 4 bits) we will are sending, this is for the complete
+                   command and not just the UID
+        """
         self._clear_bits_after_collision()
 
-        finished = False
-        while not finished:
-            if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS1:
-                use_cascade_tag = valid_bits and len(uid) > 4
+        # Setup the initial values:
+        # How many bits within the UID have we verified so far
+        known_bits = 0
+        # Which cascade level to start with
+        cascade_level = MFRC.PICCCommand.ANTICOLL_CS1
+        # A list to hold the uid
+        uid = []
+        # A list to hold the data we need to transceive
+        buffer = []
+        # How many extra bits do we need to transceive?
+        transceive_bits = 0
+        # How many slots in the buffer do we need to transceive (this will control the size of the slice later)
+        # Default to 2 as the first command is always just SEL + NVB
+        transceive_buffer_size = 2
+
+        # Perform the steps below until the SAK indicates we have the complete UID
+        uid_complete = False
+        while not uid_complete:
+            # Determine some additional options based on the current cascade level
+            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS1:
+                use_cascade_tag = len(uid) > 4
                 uid_start_index = 0  # We know nothing yet
 
-            if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS2:
-                use_cascade_tag = valid_bits and len(uid) > 7
+            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
+                use_cascade_tag = len(uid) > 7
                 uid_start_index = 3  # We know about 4 bytes
 
-            if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS3:
+            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS3:
                 use_cascade_tag = False  # Never used in cascade level 3
                 uid_start_index = 6  # We know about 7 bytes
 
+            # Set the command we'll be using
+            buffer[0] = cascade_level
 
-            # The anticollision process is broken into two parts: anticollision proper and selection
-            # Anticollision is executed when we don't know anything about the UID (because we can't select the one we want)
-            # We wait until we have a single PICC in the field so we can get the first part of the UID and select after that
-            # Once we have the at least 4 bytes of the UID, we can proceed with selects
+            # Calculate the known_bits based on the cascade level
+            known_bits = uid_start_index * MFRC522.BITS_IN_BYTE
 
-            # How many bits of the UID do we know about?
-            # When calling this method with just the uid, this value is always a multiple of 8
-            # which makes this math a little strange. However, when we run an anticollision check
-            # and we get a collision (multiple PICCs in the field) then we'll be provided a position from 0-32 where the
-            # collision occured (the number of unique bits in the various PICC's uid) and this may mean we have to send bytes
-            # and a few bits around
-            known_bits = valid_bits - (MFRC522.BITS_IN_BYTE * uid_start_index)
-            if known_bits < 0:
-                known_bits = 0
+            # Determine which index in the buffer we need to start copying the uid information into
+            # Default to 2 ([0] = SEL, [1] = NVB)
+            buffer_index = 2
 
+            if (use_cascade_tag):
+                # We're going to send the cascade tag as [2]
+                buffer[buffer_index] = MFRC522.CASCADE_TAG
+                buffer_index += 1
+
+            # Copy the bits that we know about out of the uid list into the buffer so we can send them along with our commands
+            # We start by determining the total number of bytes (known_bits / 8) (NOTE, make sure this is inside an int() call to avoid floating point results),
+            # then add 1 additionl bit if known_bits is not evenly divisible by 8 (known_bits % 8)
+            bytes_to_copy = (int(known_bits / 8)) + 1 if (known_bits % 8) else 0
+            if bytes_to_copy:
+                # There are bytes that need to be copied, let's figure out how many we're actually going to copy (remember the cascade tag?)
+                if use_cascade_tag:
+                    # We're using the tag so we only have room for 3 bytes
+                    bytes_to_copy = min(3, bytes_to_copy)
+                else:
+                    # We're not usign the tag so we have room for 4 bytes
+                    bytes_to_copy = min(4, bytes_to_copy)
+
+                # Copy the uid bytes (starting and the uid_start_index) into the buffer in the correct location
+                for i in range(bytes_to_copy):
+                    buffer[buffer_index] = uid[uid_start_index + i]
+                    buffer_index += 1
+
+            # Wait until after we've copied the UID info over to add the CT bytes to known_bits
             if use_cascade_tag:
                 # If we're using the cascade tag we actually know about 8 more bits (the cascade tag)
                 known_bits += MFRC522.BITS_IN_BYTE
 
-            # This is needed to understand how to populate the BitFramingReg's lower 4 bits
-            bits_to_transfer = 0
-
-            # Determine how many bytes of the uid we need to add to the data list
-            bytes_to_copy = int(known_bits / 8) + 1 if (known_bits % 8) else 0
-            max_bytes = 3 if use_cascade_tag else 4
-            if bytes_to_copy > max_bytes:
-                bytes_to_copy = max_bytes
-
+            print('before SEL/ANTICOLL', 'uid_start_index', uid_start_index, 'buffer_index', buffer_index, 'known_bits', known_bits, 'buffer', buffer)
+            # Start the SEL/ANTICOLL loop
             select_finished = False
             while not select_finished:
+                print('top of SEL/ANTICOLL loop', 'cascade_level', cascade_level, 'use_cascade_tag', use_cascade_tag)
                 if known_bits >= 32:  # We've got all the bits we're going to get for this cascade level, time to select
-                    data.append(cascade_level)
-                    data.append(MFRC522.NVB_SEVEN_BYTES)  # command, NVB, 4 bytes of UID (or CT + 3 bytes) and the BCC
+                    print('we have more than 32 bits, starting select...')
+                    buffer[1] = MFRC522.NVB_SEVEN_BYTES  # SEL, NVB, 4 bytes of UID (or CT + 3 bytes) and the BCC
                     # We have at least 4 uid bytes at this point
-                    # Calculate the Block Check Character (BCC)
-                    bcc = uid[0] ^ uid[1] ^ uid[2] ^ uid[3]
-                    first_uid_byte = 0
-                    if use_cascade_tag:
-                        data.append(MFRC522.CASCADE_TAG)
-                        # Since the cascade tag is in uid[0] we can only copy over the remaining 3 bytes
-                        first_uid_byte = 1
-                    for i in range(start=first_uid_byte, stop=4):
-                        data.append(uid[i])
-                    data.append(bcc)
+                    # Calculate the Block Check Character (BCC) (buffer[6])
+                    buffer[6] = buffer[2] ^ buffer[3] ^ buffer[4] ^ buffer[5]
 
-                    # Calculate CRC_A
-                    status, crc_result = self.calculate_crc(data)
+                    # Calculate a CRC_A value for buffer[7]-[8]
+                    status, crc_result = self.calculate_crc(buffer)
                     if status != MFRC522.ErrorCode.OK:
-                        return (status, result)
-                    for b in result:
-                        # Add the CRC values to the buffer
-                        data.append(b)
-                    bits_to_transfer = 0  # We've validated that all the bits are so there are no stragglers
+                        return (status, crc_result)
+
+                    # Add CRC to the buffer
+                    buffer[7] = results[0]
+                    buffer[8] = results[1]
+
+                    # We have all the bytes so no extraneous bits to transceive
+                    transceive_bits = 0
+                    # We're sending a full select so we'll use all 9 bytes
+                    transceive_buffer_size = 9
                 else:  # This is anticollision
-                    data.append(cascade_level)
-                    bits_to_transfer = known_bits % 8
-                    bytes_to_transfer = int(known_bits / 8)  # Make sure this is an int (drop the fraction)
-                    total_bytes_to_send = 2 + bytes_to_transfer  # Need to add the bytes for command and NVB to the overall bytes
-                    data.append((total_bytes_to_send << 4) + bits_to_transfer)  # The total number of bytes needs to be in the high 4 bits,
-                                                                                # remaining bits are in low 4 bits
-                    for i in range(start=uid_start_index, stop=uid_start_index + bytes_to_copy):
-                        data.append(uid[i])
+                    print('starting anticollision...')
+                    transceive_bytes = int(known_bits / 8)
+                    transceive_bits = known_bits % 8
+                    # Calculate the total number of whole bytes we're going to send, we always send SEL and NVB and we're only sending the UID bytes
+                    nvb_byte_count = 2 + transceive_bytes
+                    # Set the NVB - high 4 is equal to the total bytes, low 4 is equal to the remaining bits
+                    buffer[1] = (nvb_byte_count << 4) + transceive_bits
+                    transceive_buffer_size = nvb_byte_count + 1 if transceive_bits else 0
 
                 # Reset the the bit-oriented frame settings
-                # The high four bits (actuall only [4], [5], and [6] because the bits will never be more than 7)
-                # indicate where the LSB is stored
-                # [0], [1], and [2] is the number of bits in the last byte that need to be transferred
-                # [3] is reserved and therefore should stay at 0 (zero)
-                self.write(MFRC522.Register.BitFramingReg, (bits_to_transfer << 4) + bits_to_transfer)
+                # This is made up of rxAlign ([4], [5], [6]) and indicates where the LSB is and
+                # TxLastBits ([0], [1], [2]) which stores how many bits in the last byte will be transmitted
+                # [3] is reserved and will be left at zero
+                # [7] is the start send indicator and will be left at zero since we're not yet ready to start
+                self.write(MFRC522.Register.BitFramingReg, (transceive_bits << 4) + transceive_bits)
 
-                status, results, results_len = self.transceive(data)
+                # Transceive only the part of the buffer indicated by transceive_buffer_size!
+                print('about to transceive', 'buffer', buffer, 'buffer to send', buffer[:transceive_buffer_size - 1])
+                status, results, results_len = self.transceive(buffer[:transceive_buffer_size - 1])
 
-
-                if status != MFRC522.ErrorCode.OK:
-                    # An error occured
-                    return (status, results)
-                elif status == MFRC522.ErrorCode.COLLISION:
-                    # There was more than PICC in the field!
+                if status == MFRC522.ErrorCode.COLLISION:
+                    print('collision!', 'status', status, 'results', results, 'results_len', results_len)
+                    # There was more than PICC in the field! Read the CollReg to get more info
                     collision_info = self.read(MFRC522.Register.CollReg)
                     if collision_info & MFRC522.BIT_MASK_COLLREG_POSITION_NOT_VALID:
                         # We don't have a valid collision position and can't continue
-                        return (status, results)
+                        return (MFRC522.ErrorCode.INVALID_COLLISION_POSITION, results)
                     collision_position = collision_info & MFRC522.BIT_MASK_COLLREG_POSITION
                     if (collision_position == 0):
                         collision_position = 32
@@ -448,40 +491,87 @@ class MFRC522:
                         # something has gone terribly wrong
                         return (MFRC522.ErrorCode.UNKNOWN_COLLISION_ERROR, result)
 
-                    # Determine how many new bits (or bytes) we now have of the uid and copy them out of the results
-                    new_bits_found = collision_position - known_bits
-                    new_bytes_found = int((new_bits_found + (known_bits % 8)) / 8)
-                    if known_bits % 8 > 0:
-                        # we had a partial byte, the results[0] is the full byte, copy it over
-                        uid[len(uid) - 1] = results[0]
-                        if new_bytes_found > 0:
-                            # There are additional bytes in results[1-n], copy them over
-                            for i in range(start=1, stop=len(results)):
-                                uid.append(results[i])
-                    else:
-                        # We had only full bytes so everything in results is new, copy it over
-                        for r in results:
-                            uid.appened(r)
-                    # Reset how many bits we know about
+                    # Determine how many new bytes and bits we've just learned about
+                    new_bytes = int((collision_position - known_bits) / 8)
+                    new_bits = (collision_position - known_bits) % 8
+                    # Copy the new information we just got from the results into the buffer for use next time through
+                    # buffer_index is left +1 position from the last byte of the uid copied in
+                    # if we had bits in the last byte, we'll need to go back one (because results now has more bits)
+                    # otherwise start copying there
+                    copy_index = buffer_index
+                    if known_bits % 8:
+                        copy_index = buffer_index - 1
+                    for i in range(new_bytes):
+                        buffer[copy_index + i] = results[i]
+
+                    # Based on the results of collision, we now have some additional known bits
                     known_bits = collision_position
+                    # The protocol indicates we need to flip the bit prior to the collision position and try again
+                    # Need to first know the specific bit that caused the collision
+                    collision_bit = known_bits % 8
+                    # Need to know the specific bit location within the last byte to flip
+                    # Also need to account for any byte boundaries so we can't just subtract 1 from the collision bit
+                    bit_to_flip = (known_bits -1) % 8
+                    # Determine which index in the buffer contains the bit that needs to be flipped
+                    # Start with index 1 ([0] = SEL, [1] = NVB), add the number of whole bytes and then add one if there are still some bits
+                    bit_to_flip_index = 1 + (int(known_bits / 8)) + (1 if collision_bit else: 0)
+                    # Flip the bit by bitwise OR'ing with 1 shifted to the correct bit position
+                    buffer[bit_to_flip_index] |= (1 << bit_to_flip)
+                elif status != MFRC522.ErrorCode.OK:
+                    print('An error has occured', 'status', status, 'results', results)
+                    # An error occured
+                    return (status, results)
                 else:
+                    # We were successful, but sucessful at what?
                     if known_bits >= 32:
+                        print('selected success!')
                         # we just performed a select and it's successful so we're done
                         select_finished = True
                     else:
-                        # we just performed an anticollision without error so now we know all 4 bytes and this cascade level is done
+                        print('anticollision success!', 'buffer', buffer)
+                        # we just performed an anticollision without error so results contains all 32 bits of the UID for this level
+                        # Copy them over to the buffer for the select call
+                        # We can blindly copy starting at index 2 ([0] = SEL, [1] = NVB) as the cascade tag isn't a factor
+                        # the response is 40 bits, the first 32 are the uid bytes, the last 8 are the BCC value which we can discard
+                        for i in range(len(results - 1)):
+                            buffer[2 + i] = results[i]
                         known_bits = 32
+                        print('anticollision success copy complete', 'buffer', buffer)
                         # Run the select loop again
-            # Select complete, let's review the SAK
-            if (results_len != 3):
-                # We don't have 1 byte of SAK and 2 bytes of CRC
-                return (MFRC522.ErrorCode.ERR, results)
 
-            # Check if the cascade bit is set
-            if results[0] & 0b00000100:
-                cascade_level = _next_cascade_level()
+            print('just curious, what is bytes_to_copy currently set with?', bytes_to_copy)
+            # We've completed the select for this cascade level, copy over the known uid bytes
+            # Need to adjust based on whether we're using a cascade tag or not
+            if buffer[2] == MFRC522.CASCADE_TAG:
+                buffer_index_with_uid = 3
+                bytes_to_copy = 3
             else:
-                finished = True
+                buffer_index_with_uid = 2
+                bytes_to_copy = 4
+            for i in range(bytes_to_copy):
+                uid[uid_start_index + i] = buffer[buffer_index_with_uid]
+                buffer_index_with_uid += 1
+
+            # Select complete, let's review the SAK
+            if (len(results) != 3):
+                # We don't have 1 byte of SAK and 2 bytes of CRC
+                return (MFRC522.ErrorCode.INVALID_SAK_RESULT, results)
+
+            print('About to recalculate the CRC_A', 'results', results)
+            # Let's double check that CRC_A we got back by calculating our own
+            status, crc_result = self.calculate_crc(results[:1])
+            if status != MFRC522.ErrorCode.OK:
+                return (status, crc_result)
+            if (results[1] != crc_result[0]) or (results[2] != crc_result[1]):
+                return (MFRC522.ErrorCode.SAK_CRC_WRONG, results)
+
+            # Do we have the whole UID or not?
+            if results[0] & BIT_MASK_CASCADE_BIT_SET:
+                # Nope, there's still more
+                print('Cascade bit set, moving to next level...')
+                cascade_level = self._next_cascade_level(cascade_level)
+            else:
+                uid_complete = True
 
         return (MFRC522.ErrorCode.OK, uid)
 
@@ -522,7 +612,7 @@ class MFRC522:
             self.write(MFRC522.Register.FIFODataReg, datum)
 
     def _next_cascade_level(self, cascade_level):
-        if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS1:
-            return MFRC522.PCDCommand.ANTICOLL_CS2
-        if cascade_level == MFRC522.PCDCommand.ANTICOLL_CS2:
-            return MFRC522.PCDCommand.ANTICOLL_CS3
+        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS1:
+            return MFRC522.PICCCommand.ANTICOLL_CS2
+        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
+            return MFRC522.PICCCommand.ANTICOLL_CS3
