@@ -365,11 +365,11 @@ class MFRC522:
         # How many bits within the UID have we verified so far
         known_bits = 0
         # Which cascade level to start with
-        cascade_level = MFRC.PICCCommand.ANTICOLL_CS1
+        cascade_level = MFRC522.PICCCommand.ANTICOLL_CS1
         # A list to hold the uid
-        uid = []
+        uid = [0] * 10
         # A list to hold the data we need to transceive
-        buffer = []
+        buffer = [0] * 9
         # How many extra bits do we need to transceive?
         transceive_bits = 0
         # How many slots in the buffer do we need to transceive (this will control the size of the slice later)
@@ -514,7 +514,7 @@ class MFRC522:
                     bit_to_flip = (known_bits -1) % 8
                     # Determine which index in the buffer contains the bit that needs to be flipped
                     # Start with index 1 ([0] = SEL, [1] = NVB), add the number of whole bytes and then add one if there are still some bits
-                    bit_to_flip_index = 1 + (int(known_bits / 8)) + (1 if collision_bit else: 0)
+                    bit_to_flip_index = 1 + (int(known_bits / 8)) + (1 if collision_bit else 0)
                     # Flip the bit by bitwise OR'ing with 1 shifted to the correct bit position
                     buffer[bit_to_flip_index] |= (1 << bit_to_flip)
                 elif status != MFRC522.ErrorCode.OK:
@@ -573,7 +573,7 @@ class MFRC522:
             else:
                 uid_complete = True
 
-        return (MFRC522.ErrorCode.OK, uid)
+        return (MFRC522.ErrorCode.OK, uid[:self._uid_size(cascade_level) -1])
 
     def calculate_crc(self, data):
         # Idle the card, cancelling any current commands
@@ -600,7 +600,7 @@ class MFRC522:
                 rv.append(self.read(MFRC522.Register.CRCResultRegH))
                 return (MFRC522.ErrorCode.OK, rv)
         # Timeout happened
-        return (MFRC.ErrorCode.COUNTDOWN_TIMEOUT, [])
+        return (MFRC522.ErrorCode.COUNTDOWN_TIMEOUT, [])
 
     def _clear_bits_after_collision(self):
         # Set ValuesAfterColl to zero to ensure all bits are cleared after a collision
@@ -616,3 +616,14 @@ class MFRC522:
             return MFRC522.PICCCommand.ANTICOLL_CS2
         if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
             return MFRC522.PICCCommand.ANTICOLL_CS3
+
+    def _uid_size(self, cascade_level):
+        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS1:
+            # single
+            return 4
+        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
+            # double
+            return 7
+        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS3:
+            # triple
+            return 10
