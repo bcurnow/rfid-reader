@@ -427,7 +427,7 @@ class MFRC522:
                     buffer[buffer_index] = uid[uid_start_index + i]
                     buffer_index += 1
             valid_bits = 0
-            print('before SEL/ANTICOLL', 'uid_start_index', uid_start_index, 'buffer_index', buffer_index, 'known_bits', known_bits, 'buffer', buffer)
+            print('before SEL/ANTICOLL', 'uid_start_index', uid_start_index, 'buffer_index', buffer_index, 'known_bits', known_bits, 'buffer', buffer, 'valid_bits', valid_bits)
             # Start the SEL/ANTICOLL loop
             select_finished = False
             while not select_finished:
@@ -455,6 +455,7 @@ class MFRC522:
                 else:  # This is anticollision
                     print('starting anticollision...')
                     if valid_bits > 0:
+                        print('got bits from a collision', valid_bits)
                         transceive_bytes = int(valid_bits / 8)
                         transceive_bits = valid_bits % 8
                         # Calculate the total number of whole bytes we're going to send, we always send SEL and NVB and we're only sending the valid UID bytes
@@ -463,11 +464,11 @@ class MFRC522:
                         buffer[1] = (nvb_byte_count << 4) + transceive_bits
                         transceive_buffer_size = nvb_byte_count + (1 if transceive_bits else 0)
                     else:
+                        print('default anticollision...')
                         # This is the first anticollision request for this level
                         # Only sending SEL and NVB
-                        transceive_bytes = 2
                         transceive_bits = 0
-                        buffer[1] = (transceive_bits << 4) + transceive_bits
+                        buffer[1] = (2 << 4) + transceive_bits
                         transceive_buffer_size = 2
 
                 # Reset the the bit-oriented frame settings
