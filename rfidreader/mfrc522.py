@@ -379,9 +379,16 @@ class MFRC522:
         # Perform the steps below until the SAK indicates we have the complete UID
         uid_complete = False
         while not uid_complete:
-            # Determine at what index the UID starts at
-            uid_start_index = self._uid_size(cascade_level) - 1
-            
+            # Determine some additional options based on the current cascade level
+            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS1:
+                uid_start_index = 0  # We know nothing yet
+
+            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
+                uid_start_index = 3  # We know about 4 bytes
+
+            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS3:
+                uid_start_index = 6  # We know about 7 bytes
+
             # Set the command we'll be using
             buffer[0] = cascade_level
 
