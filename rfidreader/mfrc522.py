@@ -379,19 +379,9 @@ class MFRC522:
         # Perform the steps below until the SAK indicates we have the complete UID
         uid_complete = False
         while not uid_complete:
-            # Determine some additional options based on the current cascade level
-            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS1:
-                use_cascade_tag = len(uid) > 4
-                uid_start_index = 0  # We know nothing yet
-
-            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
-                use_cascade_tag = len(uid) > 7
-                uid_start_index = 3  # We know about 4 bytes
-
-            if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS3:
-                use_cascade_tag = False  # Never used in cascade level 3
-                uid_start_index = 6  # We know about 7 bytes
-
+            # Determine at what index the UID starts at
+            uid_start_index = self._uid_size(cascade_level) - 1
+            
             # Set the command we'll be using
             buffer[0] = cascade_level
 
@@ -402,39 +392,24 @@ class MFRC522:
             # Default to 2 ([0] = SEL, [1] = NVB)
             buffer_index = 2
 
-            if (use_cascade_tag):
-                # We're going to send the cascade tag as [2]
-                buffer[buffer_index] = MFRC522.CASCADE_TAG
-                buffer_index += 1
-
             # Copy the bits that we know about out of the uid list into the buffer so we can send them along with our commands
             # We start by determining the total number of bytes (known_bits / 8) (NOTE, make sure this is inside an int() call to avoid floating point results),
             # then add 1 additionl bit if known_bits is not evenly divisible by 8 (known_bits % 8)
             bytes_to_copy = (int(known_bits / 8)) + 1 if (known_bits % 8) else 0
             if bytes_to_copy:
-                # There are bytes that need to be copied, let's figure out how many we're actually going to copy (remember the cascade tag?)
-                if use_cascade_tag:
-                    # We're using the tag so we only have room for 3 bytes
-                    bytes_to_copy = min(3, bytes_to_copy)
-                else:
-                    # We're not usign the tag so we have room for 4 bytes
-                    bytes_to_copy = min(4, bytes_to_copy)
+                # We only have room for 4 bytes
+                bytes_to_copy = min(4, bytes_to_copy)
 
                 # Copy the uid bytes (starting and the uid_start_index) into the buffer in the correct location
                 for i in range(bytes_to_copy):
                     buffer[buffer_index] = uid[uid_start_index + i]
                     buffer_index += 1
 
-            # Wait until after we've copied the UID info over to add the CT bytes to known_bits
-            if use_cascade_tag:
-                # If we're using the cascade tag we actually know about 8 more bits (the cascade tag)
-                known_bits += MFRC522.BITS_IN_BYTE
-
             print('before SEL/ANTICOLL', 'uid_start_index', uid_start_index, 'buffer_index', buffer_index, 'known_bits', known_bits, 'buffer', buffer)
             # Start the SEL/ANTICOLL loop
             select_finished = False
             while not select_finished:
-                print('top of SEL/ANTICOLL loop', 'cascade_level', cascade_level, 'use_cascade_tag', use_cascade_tag)
+                print('top of SEL/ANTICOLL loop', 'cascade_level', cascade_level)
                 if known_bits >= 32:  # We've got all the bits we're going to get for this cascade level, time to select
                     print('we have more than 32 bits, starting select...')
                     buffer[1] = MFRC522.NVB_SEVEN_BYTES  # SEL, NVB, 4 bytes of UID (or CT + 3 bytes) and the BCC
@@ -539,15 +514,11 @@ class MFRC522:
                         print('anticollision success copy complete', 'buffer', buffer)
                         # Run the select loop again
 
-            print('just curious, what is bytes_to_copy currently set with?', bytes_to_copy)
+            print('just curious, what is bytes_to_copy currently set to?', bytes_to_copy)
             # We've completed the select for this cascade level, copy over the known uid bytes
-            # Need to adjust based on whether we're using a cascade tag or not
-            if buffer[2] == MFRC522.CASCADE_TAG:
-                buffer_index_with_uid = 3
-                bytes_to_copy = 3
-            else:
-                buffer_index_with_uid = 2
-                bytes_to_copy = 4
+            buffer_index_with_uid = 2
+            bytes_to_copy = 4
+            # Loop with zip?
             for i in range(bytes_to_copy):
                 uid[uid_start_index + i] = buffer[buffer_index_with_uid]
                 buffer_index_with_uid += 1
