@@ -5,6 +5,7 @@ The additional documentation comes from NXP's data-sheet on the MFRC522: https:/
 """
 import atexit
 from enum import IntEnum, unique
+import time
 
 import RPi.GPIO as GPIO
 import spidev
@@ -210,9 +211,11 @@ class MFRC522:
                 if status == MFRC522.ReturnCode.OK:
                     return self._uid_bytes_to_hex_string(results)
                 else:
-                    time.sleep(0.001)  # Wait a very short time to avoid hogging the CPU
-                    if time.time() >= timeout:
-                        return None
+                    # An error happened, return None
+                    return None
+            time.sleep(0.001)  # Wait a very short time to avoid hogging the CPU
+            if timeout and time.time() >= timeout:
+                return None
 
     def close(self):
         if self.spi:
@@ -421,9 +424,9 @@ class MFRC522:
 
                 # Copy the uid bytes (starting and the uid_start_index) into the buffer in the correct location
                 for i in range(bytes_to_copy):
-                    buffer[buffer_index] = uid[(uid_start_index % 3)+ i]
+                    buffer[buffer_index] = uid[uid_start_index + i]
                     buffer_index += 1
-
+            valid_bits = 0
             print('before SEL/ANTICOLL', 'uid_start_index', uid_start_index, 'buffer_index', buffer_index, 'known_bits', known_bits, 'buffer', buffer)
             # Start the SEL/ANTICOLL loop
             select_finished = False
@@ -451,13 +454,21 @@ class MFRC522:
                     transceive_buffer_size = 9
                 else:  # This is anticollision
                     print('starting anticollision...')
-                    transceive_bytes = int(known_bits / 8)
-                    transceive_bits = known_bits % 8
-                    # Calculate the total number of whole bytes we're going to send, we always send SEL and NVB and we're only sending the UID bytes
-                    nvb_byte_count = 2 + transceive_bytes
-                    # Set the NVB - high 4 is equal to the total bytes, low 4 is equal to the remaining bits
-                    buffer[1] = (nvb_byte_count << 4) + transceive_bits
-                    transceive_buffer_size = nvb_byte_count + (1 if transceive_bits else 0)
+                    if valid_bits > 0:
+                        transceive_bytes = int(valid_bits / 8)
+                        transceive_bits = valid_bits % 8
+                        # Calculate the total number of whole bytes we're going to send, we always send SEL and NVB and we're only sending the valid UID bytes
+                        nvb_byte_count = 2 + transceive_bytes
+                        # Set the NVB - high 4 is equal to the total bytes, low 4 is equal to the remaining bits
+                        buffer[1] = (nvb_byte_count << 4) + transceive_bits
+                        transceive_buffer_size = nvb_byte_count + (1 if transceive_bits else 0)
+                    else:
+                        # This is the first anticollision request for this level
+                        # Only sending SEL and NVB
+                        transceive_bytes = 2
+                        transceive_bits = 0
+                        buffer[1] = (transceive_bits << 4) + transceive_bits
+                        transceive_buffer_size = 2
 
                 # Reset the the bit-oriented frame settings
                 # This is made up of rxAlign ([4], [5], [6]) and indicates where the LSB is and
@@ -481,20 +492,20 @@ class MFRC522:
                     collision_position = collision_info & MFRC522.BIT_MASK_COLLREG_POSITION
                     if (collision_position == 0):
                         collision_position = 32
-                    if collision_position <= known_bits:
+                    if collision_position <= valid_bits:
                         # Wait a second, we already know these bits are valid so
                         # something has gone terribly wrong
                         return (MFRC522.ReturnCode.UNKNOWN_COLLISION_ERROR, result)
 
                     # Determine how many new bytes and bits we've just learned about
-                    new_bytes = int((collision_position - known_bits) / 8)
-                    new_bits = (collision_position - known_bits) % 8
+                    new_bytes = int((collision_position - valid_bits) / 8)
+                    new_bits = (collision_position - valid_bits) % 8
                     # Copy the new information we just got from the results into the buffer for use next time through
                     # buffer_index is left +1 position from the last byte of the uid copied in
                     # if we had bits in the last byte, we'll need to go back one (because results now has more bits)
                     # otherwise start copying there
                     copy_index = buffer_index
-                    if known_bits % 8:
+                    if valid_bits % 8:
                         copy_index = buffer_index - 1
                     for i in range(new_bytes):
                         buffer[copy_index + i] = results[i]
