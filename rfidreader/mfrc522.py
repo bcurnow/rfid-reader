@@ -101,7 +101,7 @@ class MFRC522:
     FIFO_BUFFER_MAX_SIZE = 64  # The size (in bytes) of the FIFO buffer
     BITS_IN_BYTE = 8  # The number of bits in a byte
     BIT_MASK_ANTENNA_POWER = 0b00000011  # A bit mask for [0] and [1] (Tx1RFEn, Tx2RFEn) which indicate the current power state of the antenna
-    BIT_MASK_CASCADE_BIT_SET = 0b000001000  # Bit mask to check the SAK for the cascade bit
+    BIT_MASK_CASCADE_BIT_SET = 0b000000100  # Bit mask to check the SAK for the cascade bit
     BIT_MASK_COLLREG_POSITION_NOT_VALID = 0b00100000  # A bit mask that pulls CollPosNotValid [5]
     BIT_MASK_COLLREG_POSITION = 0b00011111  # A bit amsk that pulls CollPos [0]-[4]
     BIT_MASK_COMIRQ_RX_AND_IDLE = 0b00110000  # Bit mask for the RX (receive) and Idle (command complete) interrupts
@@ -277,9 +277,6 @@ class MFRC522:
 
         self._write_data_to_fifo(data)
 
-        # TODO figure out how to handle rxAlign and validBits (if necessary)
-        #      there may need to be a BitFraming command here
-
         # Run the transceive command
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.TRANSCEIVE)
 
@@ -424,14 +421,14 @@ class MFRC522:
                     # Calculate the Block Check Character (BCC) (buffer[6])
                     buffer[6] = buffer[2] ^ buffer[3] ^ buffer[4] ^ buffer[5]
 
-                    # Calculate a CRC_A value for buffer[7]-[8]
-                    status, crc_result = self.calculate_crc(buffer)
+                    # Calculate a CRC_A value the first 7 bytes of the buffer
+                    status, crc_results = self.calculate_crc(buffer[:7])
                     if status != MFRC522.ErrorCode.OK:
-                        return (status, crc_result)
+                        return (status, crc_results)
 
                     # Add CRC to the buffer
-                    buffer[7] = results[0]
-                    buffer[8] = results[1]
+                    buffer[7] = crc_results[0]
+                    buffer[8] = crc_results[1]
 
                     # We have all the bytes so no extraneous bits to transceive
                     transceive_bits = 0
@@ -455,8 +452,9 @@ class MFRC522:
                 self.write(MFRC522.Register.BitFramingReg, (transceive_bits << 4) + transceive_bits)
 
                 # Transceive only the part of the buffer indicated by transceive_buffer_size!
-                print('about to transceive', 'buffer', buffer, 'transceive_buffer_size', transceive_buffer_size, 'buffer to send', buffer[:transceive_buffer_size - 1])
-                status, results, results_len = self.transceive(buffer[:transceive_buffer_size - 1])
+                print('about to transceive', 'buffer', buffer, 'transceive_buffer_size', transceive_buffer_size, 'buffer to send', buffer[:transceive_buffer_size])
+                status, results, results_len = self.transceive(buffer[:transceive_buffer_size])
+                print('transceive results', 'status', status, 'results', results, 'results_len', results_len)
 
                 if status == MFRC522.ErrorCode.COLLISION:
                     print('collision!', 'status', status, 'results', results, 'results_len', results_len)
@@ -510,25 +508,30 @@ class MFRC522:
                         # we just performed a select and it's successful so we're done
                         select_finished = True
                     else:
-                        print('anticollision success!', 'buffer', buffer)
+                        print('anticollision success!', 'results', results)
                         # we just performed an anticollision without error so results contains all 32 bits of the UID for this level
                         # Copy them over to the buffer for the select call
                         # We can blindly copy starting at index 2 ([0] = SEL, [1] = NVB) as the cascade tag isn't a factor
                         # the response is 40 bits, the first 32 are the uid bytes, the last 8 are the BCC value which we can discard
-                        for i in range(len(results - 1)):
+                        for i in range(len(results) - 1):
                             buffer[2 + i] = results[i]
                         known_bits = 32
                         print('anticollision success copy complete', 'buffer', buffer)
                         # Run the select loop again
 
-            print('just curious, what is bytes_to_copy currently set to?', bytes_to_copy)
             # We've completed the select for this cascade level, copy over the known uid bytes
-            buffer_index_with_uid = 2
-            bytes_to_copy = 4
-            # Loop with zip?
+            # Need to adjust based on whether we're received a cascade tag or not
+            print('buffer[2] in hex:', hex(buffer[2]), 'MFRC522.CASCADE_TAG in hex:', hex(MFRC522.CASCADE_TAG))
+            if buffer[2] == MFRC522.CASCADE_TAG:
+                buffer_index_with_uid = 3
+                bytes_to_copy = 3
+            else:
+                buffer_index_with_uid = 2
+                bytes_to_copy = 4            # Loop with zip?
             for i in range(bytes_to_copy):
                 uid[uid_start_index + i] = buffer[buffer_index_with_uid]
                 buffer_index_with_uid += 1
+            print('uid so far', uid)
 
             # Select complete, let's review the SAK
             if (len(results) != 3):
@@ -544,14 +547,14 @@ class MFRC522:
                 return (MFRC522.ErrorCode.SAK_CRC_WRONG, results)
 
             # Do we have the whole UID or not?
-            if results[0] & BIT_MASK_CASCADE_BIT_SET:
+            if results[0] & MFRC522.BIT_MASK_CASCADE_BIT_SET:
                 # Nope, there's still more
                 print('Cascade bit set, moving to next level...')
                 cascade_level = self._next_cascade_level(cascade_level)
             else:
                 uid_complete = True
 
-        return (MFRC522.ErrorCode.OK, uid[:self._uid_size(cascade_level) -1])
+        return (MFRC522.ErrorCode.OK, uid[:self._uid_size(cascade_level)])
 
     def calculate_crc(self, data):
         # Idle the card, cancelling any current commands
