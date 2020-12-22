@@ -636,7 +636,7 @@ class MFRC522:
             # triple
             return 10
 
-    def _uid_bytes_to_hex_string(uid):
+    def _uid_bytes_to_hex_string(self, uid):
         uid = ''
         for digit in uid:
             uid += f'{digit:0>2X}'
