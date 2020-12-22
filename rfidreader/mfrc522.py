@@ -74,7 +74,7 @@ class MFRC522:
 
 
     @unique
-    class ErrorCode(IntEnum):
+    class ReturnCode(IntEnum):
         """ The actual values don't matter. """
         OK = 0  # everything is OK
         NOTAGERR = 1  # There was no tag to read
@@ -188,16 +188,31 @@ class MFRC522:
 
         # According to the NXP docs the content of the ATQA should be ignored
         # However, we will check both the status and that we received 16 bits (2 bytes)
-        if status == MFRC522.ErrorCode.OK and results_len == 16:
+        if status == MFRC522.ReturnCode.OK and results_len == 16:
             return True
         return False
 
-    def read_uid(self):
+    def read_uid(self, timeout=None):
         """
         Checks for the presence of a type A PICC and, if found, executes anticollision and returns the uid
         If type A PICC not found or anticollision fails for any reason, returns None
+
+        timeout - The number of seconds to wait for a read, defaults to None which means wait infinitely
         """
-        pass
+        if timeout and timeout > -1:
+            timeout = time.time() + timeout
+
+        uid = None
+        while not uid:
+            if self.card_present():
+                status, results = self.anticollision()
+
+                if status == MFRC522.ReturnCode.OK:
+                    return self._uid_bytes_to_hex_string(results)
+                else:
+                    time.sleep(0.001)  # Wait a very short time to avoid hogging the CPU
+                    if time.time() >= timeout:
+                        return None
 
     def close(self):
         if self.spi:
@@ -303,17 +318,17 @@ class MFRC522:
 
             if (interrupts & MFRC522.BIT_MASK_LSB):
                 # timer interrupt - nothing received
-                return (MFRC522.ErrorCode.TIMEOUT, results, results_len)
+                return (MFRC522.ReturnCode.TIMEOUT, results, results_len)
 
         if countdown == 0:
             # None of the interrupts fired before the countdown finished
             # Did we lose connectivity with the MFRC522?
-            return (MFRC522.ErrorCode.ERR.COUNTDOWN_TIMEOUT, results, results_len)
+            return (MFRC522.ReturnCode.ERR.COUNTDOWN_TIMEOUT, results, results_len)
 
         errors = self.read(MFRC522.Register.ErrorReg)
         if  errors & MFRC522.BIT_MASK_TRANCEIVE_ERRORS:
             # We had an error
-            return (MFRC522.ErrorCode.ERR, results, results_len)
+            return (MFRC522.ReturnCode.ERR, results, results_len)
 
         # Check how many bytes were written to the FIFO
         bytes_written = self.read(MFRC522.Register.FIFOLevelReg)
@@ -332,14 +347,14 @@ class MFRC522:
             results.append(self.read(MFRC522.Register.FIFODataReg))
 
         if errors & MFRC522.BIT_MASK_COLLISION_ERRORS:
-            return (MFRC522.ErrorCode.COLLISION, results, results_len)
+            return (MFRC522.ReturnCode.COLLISION, results, results_len)
 
         # Normally, you'd want to check if a CRC was requested
         # However, I don't need to actually read MiFare data (which is when this is requested)
         # So I didn't implement that check
 
         # If we reached this point, all the checks have passed, we can return OK
-        return (MFRC522.ErrorCode.OK, results, results_len)
+        return (MFRC522.ReturnCode.OK, results, results_len)
 
     def anticollision(self):
         """
@@ -406,7 +421,7 @@ class MFRC522:
 
                 # Copy the uid bytes (starting and the uid_start_index) into the buffer in the correct location
                 for i in range(bytes_to_copy):
-                    buffer[buffer_index] = uid[uid_start_index + i]
+                    buffer[buffer_index] = uid[(uid_start_index % 3)+ i]
                     buffer_index += 1
 
             print('before SEL/ANTICOLL', 'uid_start_index', uid_start_index, 'buffer_index', buffer_index, 'known_bits', known_bits, 'buffer', buffer)
@@ -423,7 +438,7 @@ class MFRC522:
 
                     # Calculate a CRC_A value the first 7 bytes of the buffer
                     status, crc_results = self.calculate_crc(buffer[:7])
-                    if status != MFRC522.ErrorCode.OK:
+                    if status != MFRC522.ReturnCode.OK:
                         return (status, crc_results)
 
                     # Add CRC to the buffer
@@ -456,20 +471,20 @@ class MFRC522:
                 status, results, results_len = self.transceive(buffer[:transceive_buffer_size])
                 print('transceive results', 'status', status, 'results', results, 'results_len', results_len)
 
-                if status == MFRC522.ErrorCode.COLLISION:
+                if status == MFRC522.ReturnCode.COLLISION:
                     print('collision!', 'status', status, 'results', results, 'results_len', results_len)
                     # There was more than PICC in the field! Read the CollReg to get more info
                     collision_info = self.read(MFRC522.Register.CollReg)
                     if collision_info & MFRC522.BIT_MASK_COLLREG_POSITION_NOT_VALID:
                         # We don't have a valid collision position and can't continue
-                        return (MFRC522.ErrorCode.INVALID_COLLISION_POSITION, results)
+                        return (MFRC522.ReturnCode.INVALID_COLLISION_POSITION, results)
                     collision_position = collision_info & MFRC522.BIT_MASK_COLLREG_POSITION
                     if (collision_position == 0):
                         collision_position = 32
                     if collision_position <= known_bits:
                         # Wait a second, we already know these bits are valid so
                         # something has gone terribly wrong
-                        return (MFRC522.ErrorCode.UNKNOWN_COLLISION_ERROR, result)
+                        return (MFRC522.ReturnCode.UNKNOWN_COLLISION_ERROR, result)
 
                     # Determine how many new bytes and bits we've just learned about
                     new_bytes = int((collision_position - known_bits) / 8)
@@ -497,7 +512,7 @@ class MFRC522:
                     bit_to_flip_index = 1 + (int(known_bits / 8)) + (1 if collision_bit else 0)
                     # Flip the bit by bitwise OR'ing with 1 shifted to the correct bit position
                     buffer[bit_to_flip_index] |= (1 << bit_to_flip)
-                elif status != MFRC522.ErrorCode.OK:
+                elif status != MFRC522.ReturnCode.OK:
                     print('An error has occured', 'status', status, 'results', results)
                     # An error occured
                     return (status, results)
@@ -536,15 +551,15 @@ class MFRC522:
             # Select complete, let's review the SAK
             if (len(results) != 3):
                 # We don't have 1 byte of SAK and 2 bytes of CRC
-                return (MFRC522.ErrorCode.INVALID_SAK_RESULT, results)
+                return (MFRC522.ReturnCode.INVALID_SAK_RESULT, results)
 
             print('About to recalculate the CRC_A', 'results', results)
             # Let's double check that CRC_A we got back by calculating our own
             status, crc_result = self.calculate_crc(results[:1])
-            if status != MFRC522.ErrorCode.OK:
+            if status != MFRC522.ReturnCode.OK:
                 return (status, crc_result)
             if (results[1] != crc_result[0]) or (results[2] != crc_result[1]):
-                return (MFRC522.ErrorCode.SAK_CRC_WRONG, results)
+                return (MFRC522.ReturnCode.SAK_CRC_WRONG, results)
 
             # Do we have the whole UID or not?
             if results[0] & MFRC522.BIT_MASK_CASCADE_BIT_SET:
@@ -554,7 +569,7 @@ class MFRC522:
             else:
                 uid_complete = True
 
-        return (MFRC522.ErrorCode.OK, uid[:self._uid_size(cascade_level)])
+        return (MFRC522.ReturnCode.OK, uid[:self._uid_size(cascade_level)])
 
     def calculate_crc(self, data):
         # Idle the card, cancelling any current commands
@@ -579,9 +594,9 @@ class MFRC522:
                 rv = []
                 rv.append(self.read(MFRC522.Register.CRCResultRegL))
                 rv.append(self.read(MFRC522.Register.CRCResultRegH))
-                return (MFRC522.ErrorCode.OK, rv)
+                return (MFRC522.ReturnCode.OK, rv)
         # Timeout happened
-        return (MFRC522.ErrorCode.COUNTDOWN_TIMEOUT, [])
+        return (MFRC522.ReturnCode.COUNTDOWN_TIMEOUT, [])
 
     def _clear_bits_after_collision(self):
         # Set ValuesAfterColl to zero to ensure all bits are cleared after a collision
@@ -608,3 +623,9 @@ class MFRC522:
         if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS3:
             # triple
             return 10
+
+    def _uid_bytes_to_hex_string(uid):
+        uid = ''
+        for digit in uid:
+            uid += f'{digit:0>2X}'
+        return uid
