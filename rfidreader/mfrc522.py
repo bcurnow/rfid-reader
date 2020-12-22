@@ -455,7 +455,7 @@ class MFRC522:
                 self.write(MFRC522.Register.BitFramingReg, (transceive_bits << 4) + transceive_bits)
 
                 # Transceive only the part of the buffer indicated by transceive_buffer_size!
-                print('about to transceive', 'buffer', buffer, 'buffer to send', buffer[:transceive_buffer_size - 1])
+                print('about to transceive', 'buffer', buffer, 'transceive_buffer_size', transceive_buffer_size, 'buffer to send', buffer[:transceive_buffer_size - 1])
                 status, results, results_len = self.transceive(buffer[:transceive_buffer_size - 1])
 
                 if status == MFRC522.ErrorCode.COLLISION:
