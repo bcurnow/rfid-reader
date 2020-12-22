@@ -402,7 +402,7 @@ class MFRC522:
             # Copy the bits that we know about out of the uid list into the buffer so we can send them along with our commands
             # We start by determining the total number of bytes (known_bits / 8) (NOTE, make sure this is inside an int() call to avoid floating point results),
             # then add 1 additionl bit if known_bits is not evenly divisible by 8 (known_bits % 8)
-            bytes_to_copy = (int(known_bits / 8)) + 1 if (known_bits % 8) else 0
+            bytes_to_copy = (int(known_bits / 8)) + (1 if known_bits % 8 else 0)
             if bytes_to_copy:
                 # We only have room for 4 bytes
                 bytes_to_copy = min(4, bytes_to_copy)
@@ -445,7 +445,7 @@ class MFRC522:
                     nvb_byte_count = 2 + transceive_bytes
                     # Set the NVB - high 4 is equal to the total bytes, low 4 is equal to the remaining bits
                     buffer[1] = (nvb_byte_count << 4) + transceive_bits
-                    transceive_buffer_size = nvb_byte_count + 1 if transceive_bits else 0
+                    transceive_buffer_size = nvb_byte_count + (1 if transceive_bits else 0)
 
                 # Reset the the bit-oriented frame settings
                 # This is made up of rxAlign ([4], [5], [6]) and indicates where the LSB is and
