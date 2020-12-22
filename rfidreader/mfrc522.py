@@ -427,13 +427,10 @@ class MFRC522:
                     buffer[buffer_index] = uid[uid_start_index + i]
                     buffer_index += 1
             valid_bits = 0
-            print('before SEL/ANTICOLL', 'uid_start_index', uid_start_index, 'buffer_index', buffer_index, 'known_bits', known_bits, 'buffer', buffer, 'valid_bits', valid_bits)
             # Start the SEL/ANTICOLL loop
             select_finished = False
             while not select_finished:
-                print('top of SEL/ANTICOLL loop', 'cascade_level', cascade_level)
                 if known_bits >= 32:  # We've got all the bits we're going to get for this cascade level, time to select
-                    print('we have more than 32 bits, starting select...')
                     buffer[1] = MFRC522.NVB_SEVEN_BYTES  # SEL, NVB, 4 bytes of UID (or CT + 3 bytes) and the BCC
                     # We have at least 4 uid bytes at this point
                     # Calculate the Block Check Character (BCC) (buffer[6])
@@ -453,9 +450,7 @@ class MFRC522:
                     # We're sending a full select so we'll use all 9 bytes
                     transceive_buffer_size = 9
                 else:  # This is anticollision
-                    print('starting anticollision...')
                     if valid_bits > 0:
-                        print('got bits from a collision', valid_bits)
                         transceive_bytes = int(valid_bits / 8)
                         transceive_bits = valid_bits % 8
                         # Calculate the total number of whole bytes we're going to send, we always send SEL and NVB and we're only sending the valid UID bytes
@@ -464,7 +459,6 @@ class MFRC522:
                         buffer[1] = (nvb_byte_count << 4) + transceive_bits
                         transceive_buffer_size = nvb_byte_count + (1 if transceive_bits else 0)
                     else:
-                        print('default anticollision...')
                         # This is the first anticollision request for this level
                         # Only sending SEL and NVB
                         transceive_bits = 0
@@ -479,12 +473,9 @@ class MFRC522:
                 self.write(MFRC522.Register.BitFramingReg, (transceive_bits << 4) + transceive_bits)
 
                 # Transceive only the part of the buffer indicated by transceive_buffer_size!
-                print('about to transceive', 'buffer', buffer, 'transceive_buffer_size', transceive_buffer_size, 'buffer to send', buffer[:transceive_buffer_size])
                 status, results, results_len = self.transceive(buffer[:transceive_buffer_size])
-                print('transceive results', 'status', status, 'results', results, 'results_len', results_len)
 
                 if status == MFRC522.ReturnCode.COLLISION:
-                    print('collision!', 'status', status, 'results', results, 'results_len', results_len)
                     # There was more than PICC in the field! Read the CollReg to get more info
                     collision_info = self.read(MFRC522.Register.CollReg)
                     if collision_info & MFRC522.BIT_MASK_COLLREG_POSITION_NOT_VALID:
@@ -525,17 +516,14 @@ class MFRC522:
                     # Flip the bit by bitwise OR'ing with 1 shifted to the correct bit position
                     buffer[bit_to_flip_index] |= (1 << bit_to_flip)
                 elif status != MFRC522.ReturnCode.OK:
-                    print('An error has occured', 'status', status, 'results', results)
                     # An error occured
                     return (status, results)
                 else:
                     # We were successful, but sucessful at what?
                     if known_bits >= 32:
-                        print('selected success!')
                         # we just performed a select and it's successful so we're done
                         select_finished = True
                     else:
-                        print('anticollision success!', 'results', results)
                         # we just performed an anticollision without error so results contains all 32 bits of the UID for this level
                         # Copy them over to the buffer for the select call
                         # We can blindly copy starting at index 2 ([0] = SEL, [1] = NVB) as the cascade tag isn't a factor
@@ -543,12 +531,10 @@ class MFRC522:
                         for i in range(len(results) - 1):
                             buffer[2 + i] = results[i]
                         known_bits = 32
-                        print('anticollision success copy complete', 'buffer', buffer)
                         # Run the select loop again
 
             # We've completed the select for this cascade level, copy over the known uid bytes
             # Need to adjust based on whether we're received a cascade tag or not
-            print('buffer[2] in hex:', hex(buffer[2]), 'MFRC522.CASCADE_TAG in hex:', hex(MFRC522.CASCADE_TAG))
             if buffer[2] == MFRC522.CASCADE_TAG:
                 buffer_index_with_uid = 3
                 bytes_to_copy = 3
@@ -558,14 +544,12 @@ class MFRC522:
             for i in range(bytes_to_copy):
                 uid[uid_start_index + i] = buffer[buffer_index_with_uid]
                 buffer_index_with_uid += 1
-            print('uid so far', uid)
 
             # Select complete, let's review the SAK
             if (len(results) != 3):
                 # We don't have 1 byte of SAK and 2 bytes of CRC
                 return (MFRC522.ReturnCode.INVALID_SAK_RESULT, results)
 
-            print('About to recalculate the CRC_A', 'results', results)
             # Let's double check that CRC_A we got back by calculating our own
             status, crc_result = self.calculate_crc(results[:1])
             if status != MFRC522.ReturnCode.OK:
@@ -576,7 +560,6 @@ class MFRC522:
             # Do we have the whole UID or not?
             if results[0] & MFRC522.BIT_MASK_CASCADE_BIT_SET:
                 # Nope, there's still more
-                print('Cascade bit set, moving to next level...')
                 cascade_level = self._next_cascade_level(cascade_level)
             else:
                 uid_complete = True
@@ -637,7 +620,8 @@ class MFRC522:
             return 10
 
     def _uid_bytes_to_hex_string(self, uid):
-        uid = ''
-        for digit in uid:
-            uid += f'{digit:0>2X}'
-        return uid
+        str = ''
+        # The uid bytes come back in the reverse order from what we want to display
+        for digit in reversed(uid):
+            str += f'{digit:0>2X}'
+        return str
