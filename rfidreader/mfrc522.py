@@ -686,7 +686,7 @@ class MFRC522:
                 # Take advantage of the fact that MFRC522.PICCCommand is an IntEnum and each cascade level is +2 from the previous
                 cascade_level = MFRC522.PICCCommand(cascade_level + 2)
             else:
-                return (MFRC522.ReturnCode.OK, uid[:MFRC522.UID_SIZE_AT_CASCADE_LEVEL(cascade_level)])
+                return (MFRC522.ReturnCode.OK, uid[:MFRC522.UID_SIZE_AT_CASCADE_LEVEL[cascade_level]])
 
     def calculate_crc(self, data):
         """
