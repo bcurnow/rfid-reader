@@ -550,7 +550,7 @@ class MFRC522:
                 bytes_to_copy = min(4, bytes_to_copy)
 
                 # Copy the uid bytes (starting and the uid_start_index) into the buffer in the correct location
-                for i, buffer_index in zip(range(bytes_to_copy), range(buffer_index, bytes_to_copy)):
+                for i, buffer_index in zip(range(bytes_to_copy), range(buffer_index, buffer_index + bytes_to_copy)):
                     buffer[buffer_index] = uid[uid_start_index + i]
             valid_bits = 0
             # Start the SEL/ANTICOLL loop
@@ -665,7 +665,7 @@ class MFRC522:
             else:
                 buffer_index_with_uid = 2
                 bytes_to_copy = 4
-            for i, buffer_index_with_uid in zip(range(bytes_to_copy), range(buffer_index_with_uid, bytes_to_copy)):
+            for i, buffer_index_with_uid in zip(range(bytes_to_copy), range(buffer_index_with_uid, buffer_index_with_uid + bytes_to_copy)):
                 uid[uid_start_index + i] = buffer[buffer_index_with_uid]
 
             # Select complete, let's review the SAK
