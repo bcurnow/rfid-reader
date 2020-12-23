@@ -1,7 +1,7 @@
 """
 This code is heavily influenced by https://github.com/pimylifeup/MFRC522-python and https://github.com/miguelbalboa/rfid but has been adjusted
 so that it's better commented and suited specifically for what this library requires (e.g. reading the uid off a tag).
-The additional documentation comes from NXP's data-sheet on the MFRC522: https://www.nxp.com/docs/en/data-sheet/MFRC522.pdf
+The additional documentation comes from NXP's data-sheet on the MFRC522: https://www.nxp.com/docs/en/data-sheet/MFRC522.pdf.
 """
 import atexit
 from enum import IntEnum, unique
@@ -11,32 +11,72 @@ import RPi.GPIO as GPIO
 import spidev
 
 
-
 class MFRC522:
+    """
+    For reference, here are a couple of terms/acronyms:
+      - ATQA  ->   Answer To reQuest A, the name of the bytes that come back from the REQA command.
+      - CRC   ->   Cyclic Redundancy Check, a typical error-detecting code which indicates if any of the data has changed.
+      - FIFO  ->   First In, First Out, the first data value provided will be the first value processed
+      - LSB   ->   Least Significant Bit, aka low-order bit or right-most bit is the which determines whether a binary number is odd or even.
+                   The LSB is typically in the 2^1 postion, for examle in 0000 00001 it's a one (1), in 1111 1110 it's a zero (0).
+                   While it is possible for the LSB to be either the farthest left or right, this code is setup for the LSB to be the farthest right.
+      - MSB   ->   Most Significant Bit, aka high-order or left-most bit is the highest value bit position in a binary number.
+                   The MSB is typically in the 2^8 position, for example, in 1000 0000 it's a one (1), in 0111 1111 it's a zero (0).
+                   While it is possible for the MSB to be either the farthest left or right, this code is setup for the MSB to be the farthest left.
+      - NVB   ->   Number of valid bits, the total number of bytes (high 4 bits) and bits (low 4 bits) we will are sending, this is for the complete
+                   command and not just the UID
+      - PCB   ->   Proximity Coupling Device, the RFID reader hardware
+      - PICC  ->   Proximity Integrated Circuit Card
+      - SAK   ->   Select acknowledgement, what is returned by the PICC for a full select
+      - SEL   ->   Select, the actual value of this command changes based on the current level (1, 2, 3)
+      - SPI   ->   Serial Peripheral Interface, a synchronous serial communication interface and how this code expects the MFRC522 to be connected.
+    """
+
     @unique
     class Register(IntEnum):
-        CommandReg = 0x01  # starts and stops command execution
-        ComIrqReg = 0x04  # interrupt request bits
-        DivIrqReg = 0x05  # interrupt request bits for CRC
-        ErrorReg = 0x06  # error bits showing the error status of the last command executed
-        Status1Reg = 0x07  # Status register for various commands
-        FIFODataReg = 0x09  # input and output of 64 byte FIFO buffer
-        FIFOLevelReg = 0x0A  # number of bytes stored in the FIFO buffer
-        ControlReg = 0x0C  # miscellaneous control registers
-        BitFramingReg = 0x0D  # adjustments for bit-oriented frames
-        CollReg = 0x0E  # bit-collision detection
-        ModeReg = 0x11  # defines general modes for transmitting and receiving
-        TxControlReg = 0x14  # controls the logical behavior of the antenna driver pins TX1 and TX2
-        TxASKReg = 0x15  # controls the setting of the transmission modulation
-        CRCResultRegH = 0x21  # The MSB of the CRC result
-        CRCResultRegL = 0x22  # The LSB of the CRC result
-        TModeReg = 0x2A  # timer settings
-        TPrescalerReg = 0x2B  # defines settings for the internal timer
-        TReloadRegH = 0x2C  # defines the 16-bit timer reload MSB value
-        TReloadRegL = 0x2D  # defines the 16-bit timer reload LSB value
+        # starts and stops command execution
+        CommandReg = 0x01
+        # interrupt request bits
+        ComIrqReg = 0x04
+        # interrupt request bits for CRC
+        DivIrqReg = 0x05
+        # error bits showing the error status of the last command executed
+        ErrorReg = 0x06
+        # Status register for various commands
+        Status1Reg = 0x07
+        # input and output of 64 byte FIFO buffer
+        FIFODataReg = 0x09
+        # number of bytes stored in the FIFO buffer
+        FIFOLevelReg = 0x0A
+        # miscellaneous control registers
+        ControlReg = 0x0C
+        # adjustments for bit-oriented frames
+        BitFramingReg = 0x0D
+        # bit-collision detection
+        CollReg = 0x0E
+        # defines general modes for transmitting and receiving
+        ModeReg = 0x11
+        # controls the logical behavior of the antenna driver pins TX1 and TX2
+        TxControlReg = 0x14
+        # controls the setting of the transmission modulation
+        TxASKReg = 0x15
+        # The MSB of the CRC result
+        CRCResultRegH = 0x21
+        # The LSB of the CRC result
+        CRCResultRegL = 0x22
+        # timer settings
+        TModeReg = 0x2A
+        # defines settings for the internal timer
+        TPrescalerReg = 0x2B
+        # defines the 16-bit timer reload MSB value
+        TReloadRegH = 0x2C
+        # defines the 16-bit timer reload LSB value
+        TReloadRegL = 0x2D
 
         def read(self):
             """
+            Returns the register as an appropriately bit-shifted value with the first bit indicating a read operation.
+
             Registers are represented by a 6-bit value where the LSB is always 0 (zero)
             and the MSB indicates the mode: 0 for write, 1 for read.
             We use the write method first and then bitwise OR with 1000 0000
@@ -46,6 +86,8 @@ class MFRC522:
 
         def write(self):
             """
+            Returns the register as an appropriately bit-shifted value with the first bit indicating a write operation.
+
             Registers are represented by a 6-bit value where the LSB is always 0 (zero)
             and the MSB indicates the mode: 0 for write, 1 for read.
             To ensure that the LSB is always zero, we bit shift 1 place to the left.
@@ -64,59 +106,105 @@ class MFRC522:
             """
             return (self << 1) & MFRC522.BIT_MASK_REGISTER
 
-
     @unique
     class PCDCommand(IntEnum):
-        """ proximity coupling device (PCD) commands """
-        IDLE = 0x00  # Stop any in process commands and idle the board
-        CALCCRC = 0x03  # Perform a CRC check
-        TRANSCEIVE = 0x0C  # Tranceive data
-        SOFT_RESET = 0x0F  # Perform a soft reset of the board
-
+        # Stop any in process commands and idle the board
+        IDLE = 0x00
+        # Perform a CRC check
+        CALCCRC = 0x03
+        # Tranceive data
+        TRANSCEIVE = 0x0C
+        # Perform a soft reset of the board
+        SOFT_RESET = 0x0F
 
     @unique
     class ReturnCode(IntEnum):
-        """ The actual values don't matter. """
-        OK = 0  # everything is OK
-        NOTAGERR = 1  # There was no tag to read
-        ERR = 2  # Something went wrong (e.g. parity error, buffer oveflow, protocol error)
-        TIMEOUT = 3  # The timer completed before we were done
-        COUNTDOWN_TIMEOUT = 4  # Our countdown completed without the timer going off
-        COLLISION = 5  # A collision error happened
-        UNKNOWN_COLLISION_ERROR = 6  # A collision happened but the position is within the data we already know which shouldn't be possible
-        INVALID_COLLISION_POSITION = 7  # A collision happened by the result did not provide a valid collision position
-        INVALID_SAK_RESULT = 8  # We successfully completed a SEL but the SAK wasn't the right size/content
-        SAK_CRC_WRONG = 9  # We got a SAK but the CRC value didn't actually check out
-
-
+        """ The actual values don't matter, the names are important."""
+        # everything is OK
+        OK = 0
+        # There was no tag to read
+        NOTAGERR = 1
+        # Something went wrong (e.g. parity error, buffer oveflow, protocol error)
+        ERR = 2
+        # The timer completed before we were done
+        TIMEOUT = 3
+        # Our countdown completed without the timer going off
+        COUNTDOWN_TIMEOUT = 4
+        # A collision error happened
+        COLLISION = 5
+        # A collision happened but the position is within the data we already know which shouldn't be possible
+        UNKNOWN_COLLISION_ERROR = 6
+        # A collision happened by the result did not provide a valid collision position
+        INVALID_COLLISION_POSITION = 7
+        # We successfully completed a SEL but the SAK wasn't the right size/content
+        INVALID_SAK_RESULT = 8
+        # We got a SAK but the CRC value didn't actually check out
+        SAK_CRC_WRONG = 9
 
     @unique
     class PICCCommand(IntEnum):
-        """ proximity inductive coupling card (PICC) commands """
-        REQA = 0x26  # Is there a card in the field?
-        ANTICOLL_CS1 = 0x93  # Anti-collision cascade level 1
-        ANTICOLL_CS2 = 0x95  # Anti-collision cascade level 2
-        ANTICOLL_CS3 = 0x97  # Anti-collision cascade level 3
+        # Is there a type A card in the field?
+        REQA = (0x26)
+        # Anti-collision cascade level 1
+        ANTICOLL_CS1 = 0x93
+        # Anti-collision cascade level 2
+        ANTICOLL_CS2 = 0x95
+        # Anti-collision cascade level 3
+        ANTICOLL_CS3 = 0x97
 
-    MAX_SPEED_HZ = 106000  # 106 kBd - see initialize_card()
-    FIFO_BUFFER_MAX_SIZE = 64  # The size (in bytes) of the FIFO buffer
-    BITS_IN_BYTE = 8  # The number of bits in a byte
-    BIT_MASK_ANTENNA_POWER = 0b00000011  # A bit mask for [0] and [1] (Tx1RFEn, Tx2RFEn) which indicate the current power state of the antenna
-    BIT_MASK_CASCADE_BIT_SET = 0b000000100  # Bit mask to check the SAK for the cascade bit
-    BIT_MASK_COLLREG_POSITION_NOT_VALID = 0b00100000  # A bit mask that pulls CollPosNotValid [5]
-    BIT_MASK_COLLREG_POSITION = 0b00011111  # A bit amsk that pulls CollPos [0]-[4]
-    BIT_MASK_COMIRQ_RX_AND_IDLE = 0b00110000  # Bit mask for the RX (receive) and Idle (command complete) interrupts
-    BIT_MASK_DIVIRQ_CRCIRQ = 0b00000100  # Bit mask for the CRCIRq flag in the DivIrqReg
-    BIT_MASK_LSB = 0b00000001  # The least signficant bit
-    BIT_MASK_MSB = 0b10000000  # The most significant bit
-    BIT_MASK_REGISTER = 0b01111110  # A bit mask for the six-digit register values (dropping MSB and LSB)
-    BIT_MASK_TRANCEIVE_ERRORS = 0b00010011  # A bit mask for protocol [0], partity [1], or buffer overflow [4] errors
-    BIT_MASK_COLLISION_ERRORS = 0b00001000  # A bit mask for collision [3] errors
-    BIT_MASK_TRANSCEIVE_IRQ = 0b11110111  # Turns on/masks all the interrupts except for HiAlertIEn ([3])
-
-    GPIO_BCM_RST_DEFAULT = 15  # The default RST pin (GPIO 15) when gpio_mode is set to GPIO.BCM
-    GPIO_BOARD_RST_DEFAULT = 22  # The default RST pin (GPIO 25) when gpio_mode is set to GPIO.BOARD (the default)
-
+    # Force a 100% ASK modulation by setting [6] = 1
+    ASK_MODULATION = 0b01000000
+    # Set TxLastBits to 7 which is the short frame format
+    BIT_FRAMING_SHORT_FRAME_FORMAT = 0b00000111
+    # A bit mask for [0] and [1] (Tx1RFEn, Tx2RFEn) which indicate the current power state of the antenna
+    BIT_MASK_ANTENNA_POWER = 0b00000011
+    # Bit mask to check the SAK for the cascade bit
+    BIT_MASK_CASCADE_BIT_SET = 0b000000100
+    # A bit mask for collision [3] errors
+    BIT_MASK_COLLISION_ERRORS = 0b00001000
+    # A bit mask that pulls CollPosNotValid [5]
+    BIT_MASK_COLLREG_POSITION_NOT_VALID = 0b00100000
+    # A bit amsk that pulls CollPos [0]-[4]
+    BIT_MASK_COLLREG_POSITION = 0b00011111
+    # Bit mask for the RX (receive) and Idle (command complete) interrupts
+    BIT_MASK_COMIRQ_RX_AND_IDLE = 0b00110000
+    # Bit mask for the CRCIRq flag in the DivIrqReg
+    BIT_MASK_DIVIRQ_CRCIRQ = 0b00000100
+    # The least signficant bit
+    BIT_MASK_LSB = 0b00000001
+    # The most significant bit
+    BIT_MASK_MSB = 0b10000000
+    # A bit mask for the six-digit register values (dropping MSB and LSB)
+    BIT_MASK_REGISTER = 0b01111110
+    # A bit mask for protocol [0], partity [1], or buffer overflow [4] errors
+    BIT_MASK_TRANCEIVE_ERRORS = 0b00010011
+    # Turns on/masks all the interrupts except for HiAlertIEn ([3])
+    BIT_MASK_TRANSCEIVE_IRQ = 0b11110111
+    # The number of bits in a byte
+    BITS_IN_BYTE = 8
+    # The byte value that represents a cascade tag (CT)
+    # If this is the first byte of a UID, it indicates that the PICC has more bytes for the UID
+    # and we need to move to the next cascade level to get them
+    CASCADE_TAG = 0x88
+    # Indicates a collision in the 32nd bit
+    COLLISION_POSITION_32 = 0b00000000
+    # The size (in bytes) of the FIFO buffer
+    FIFO_BUFFER_MAX_SIZE = 64
+    # The default RST pin (GPIO 15) when gpio_mode is set to GPIO.BCM
+    GPIO_BCM_RST_DEFAULT = 15
+    # The default RST pin (GPIO 25) when gpio_mode is set to GPIO.BOARD (the default)
+    GPIO_BOARD_RST_DEFAULT = 22
+    # 106 kBd - see initialize_card()
+    MAX_SPEED_HZ = 106000
+    # Default value for the ModeReg
+    # Set the CRC preset value to 0x6363 [0]-[1]
+    # Set the polarity of MFIN to HIGH [3]
+    # Ensure the transmitter can only be started if an RF field is generated [5]
+    # Set MSBFirst to false
+    # Other bits are reserved and therefore left at 0
+    MODE_DEFAULTS = 0b00111101
+    # We will be transferring all 7 possible bytes (command, NVB, plus all 5 uid bits)
+    NVB_SEVEN_BYTES = 0b01110000
     # The following values configure the timer so the result is a timer delay of 0.025 seconds (~25 miliseconds)
     # This done by setting the TPrescaler (12-bits) first 4 bits to 0 and the second 8 to 169 which results in a total value of 169
     # Then the TReload (16-bits) first 8 bits are set to 3 and the second 8 bits are set 232 which results in a total value of 1000
@@ -135,32 +223,26 @@ class MFRC522:
     #       A value of 169 for TPrescaler results in 339 in the equation so the way to think about this is:
     #       The TPrescaler represents 25 micro seconds the TReload represents how many 25 microsecond time-slots
     #       to count before triggering the timer IRQ
-    TPRESCALER_HIGH_FOUR = 0b10000000  # Sets the value of TPrescaler's high 4 bits (out of 12) (value = 0)
-    TPRESCLER_LOW_EIGHT = 0b10101001  # Sets the value of the TPrescaler's low 8 bits (out of 12) (value = 169)
-    TRELOAD_HIGH_EIGHT = 0b00000011  # The high 8 bits of the TReload value (value = 3)
-    TRELOAD_LOW_EIGHT = 0b11101000  # The low 8 bits of the TReload value (value = 232)
-    ASK_MODULATION = 0b01000000  # Force a 100% ASK modulation by setting [6] = 1
-    MODE_DEFAULTS = 0b00111101  # Set the CRC preset value to 0x6363 [0]-[1]
-                                # Set the polarity of MFIN to HIGH [3]
-                                # Ensure the transmitter can only be started if an RF field is generated [5]
-                                # Set MSBFirst to false
-                                # Other bits are reserved and therefore left at 0
-    BIT_FRAMING_SHORT_FRAME_FORMAT = 0b00000111  # Set TxLastBits to 7 which is the short frame format
-    TRANSCEIVE_CHECKS = 2 * ((TRELOAD_HIGH_EIGHT << 8) + TRELOAD_LOW_EIGHT)  # This is the number of IRQ checks to make for each command (e.g. TRANSCEIVE, CALCCRC)
-                                                                     # This value is based on the TReload value as this indicates how many 25 microsecond delays
-                                                                     # We want to check the IRQ twice any many times to ensure that our IRQ checking loop is
-                                                                     # longer than the timer time as each time through the look should be ~ 25 microsecond
-                                                                     # To use the TReload value, we need to combine the high and low bits so we shift the
-                                                                     # high eight bits 8 places to the left and then add in the low bits. This results in
-                                                                     # the total value of TReload (e.g. 1000) and allows us to base this constant on a multiple
-                                                                     # of that.
-    CRC_CHECKS = 5 * ((TRELOAD_HIGH_EIGHT << 8) + TRELOAD_LOW_EIGHT)  # See TRANSCEIVE_CHECKS for an explanation (we want more time for CRC)
-    CASCADE_TAG = 0x88  # The value to pass when performing anticollision. Used by cascade levels 1 and 2
-    COLLISION_POSITION_32 = 0b00000000  # Indicates a collision in the 32nd bit
-    COLLISION_POSITION_1 = 0b00000001  # Indicates a collision in the 1st bit
-    COLLISION_POSITION_8 = 0b00001000  # Indicates a collision in the 8th bit
-    NVB_SEVEN_BYTES = 0b01110000  # We will be transferring all 7 possible bytes (command, NVB, plus all 5 uid bits)
+    # Sets the value of TPrescaler's high 4 bits (out of 12) (value = 0)
+    TPRESCALER_HIGH_FOUR = 0b10000000
+    # Sets the value of the TPrescaler's low 8 bits (out of 12) (value = 169)
+    TPRESCLER_LOW_EIGHT = 0b10101001
+    # The high 8 bits of the TReload value (value = 3)
+    TRELOAD_HIGH_EIGHT = 0b00000011
+    # The low 8 bits of the TReload value (value = 232)
+    TRELOAD_LOW_EIGHT = 0b11101000
 
+    # This is the number of IRQ checks to make for the TRANSCEIVE command.
+    # This value is based on the TReload value as this indicates how many 25 microsecond delays.
+    # We want to check the IRQ twice any many times to ensure that our IRQ checking loop is
+    # longer than the timer interval as each time through the loop should be ~ 25 microsecond
+    # To use the TReload value, we need to combine the high and low bits so we shift the
+    # high eight bits 8 places to the left and then add in the low bits. This results in
+    # the total value of TReload (e.g. 1000) and allows us to base this constant on a multiple
+    # of that.
+    TRANSCEIVE_CHECKS = 2 * ((TRELOAD_HIGH_EIGHT << 8) + TRELOAD_LOW_EIGHT)
+    # See TRANSCEIVE_CHECKS for an explanation (we want more time for CRC)
+    CRC_CHECKS = 5 * ((TRELOAD_HIGH_EIGHT << 8) + TRELOAD_LOW_EIGHT)
 
     def __init__(self, bus=0, device=0, gpio_mode=GPIO.BOARD, rst_pin=None):
         self.spi = spidev.SpiDev()
@@ -195,10 +277,17 @@ class MFRC522:
 
     def read_uid(self, timeout=None):
         """
-        Checks for the presence of a type A PICC and, if found, executes anticollision and returns the uid
-        If type A PICC not found or anticollision fails for any reason, returns None
+        Reads the UID from a PICC.
 
-        timeout - The number of seconds to wait for a read, defaults to None which means wait infinitely
+        Args:
+            timeout: The number of seconds to wait for a read.
+                     Accepts floating point numbers (e.g. 1.5, .0001).
+                     If the value is None or a negative number, will wait infinitely.
+                     If the value is zero, will look for a card and read the UID only once before timing out
+                     Defaults to None
+
+        Returns:
+            The uid as a hex string if a type A PICC was found and None in all other cases.
         """
         if timeout and timeout > -1:
             timeout = time.time() + timeout
@@ -220,9 +309,11 @@ class MFRC522:
     def close(self):
         if self.spi:
             self.spi.close()
+        # Make sure to reset the value of any GPIO pins we've used to be a good citizen
         GPIO.cleanup()
 
     def initialize_card(self):
+        """ Resets the card and then sets our defaults."""
         self.soft_reset()
         self.write(MFRC522.Register.TModeReg, MFRC522.TPRESCALER_HIGH_FOUR)
         self.write(MFRC522.Register.TPrescalerReg, MFRC522.TPRESCLER_LOW_EIGHT)
@@ -233,27 +324,31 @@ class MFRC522:
         self.antenna_on()
 
     def soft_reset(self):
-        """ Executes a soft reset on the card to reset all registers to default values (internal buffer is not changed). """
+        """ Executes a soft reset on the card to reset all registers to default values (internal buffer is not changed)."""
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.SOFT_RESET)
 
     def read(self, register):
         """
-        Reads a value from the card.
-        register: The register to read from
+        Reads a value from the card and return the byte read.
+
+        Args:
+            register: The MFRC522.Register to read from.
+
         """
         val = self.spi.xfer2([register.read(), 0])
         return val[1]
 
-    def write(self, register, value):
+    def write(self, register, values):
         """
-        Writes to the card.
-        register: The register to write to
-        value: The value to write
+        Writes a list of values to the card.
+
+        Args:
+            register: The MFRC522.Register to write to.
+            values: A List of bytes to write.
         """
-        self.spi.xfer2([register.write(), value])
+        self.spi.xfer2([register.write(), values])
 
     def antenna_on(self):
-        # Read the current configuration from the register
         cur_val = self.read(MFRC522.Register.TxControlReg)
 
         # Determine if the antenna is currently off, if it is, turn it back on
@@ -265,26 +360,60 @@ class MFRC522:
             self.set_bits(MFRC522.Register.TxControlReg, MFRC522.BIT_MASK_ANTENNA_POWER)
 
     def set_bits(self, register, mask):
-        """ Reads the current value and then sets the specified bits to 1 """
+        """
+        Reads the current value and then sets the specified bits to 1.
+
+        Args:
+            register: The MFRC522.Register to set the bits on.
+            mask: A byte representing the bitmask to use.
+        """
         cur_val = self.read(register)
         # bitwise or (|) will ensure that all bit posision set to 1 in the mask are set to 1 in the current value
         self.write(register, cur_val | mask)
 
     def unset_bits(self, register, mask):
-        """ Reads the current value and then sets the specified bits to 0 """
+        """
+        Reads the current value and then sets the specified bits to 0.
+
+        Args:
+            register: The MFRC522.Register to set the bits on.
+            mask: A byte representing the bitmask to use.
+                  The current value will be AND'd with the complement (NOT)
+        """
         cur_val = self.read(register)
         # bitwise and (&) with a NOT'd (~) maks will ensure that all bit positions set to 1 in the mask are set to 0 in the current value
         self.write(register, cur_val & (~mask))
 
     def req_type_a(self):
-        """ Check to see if type A PICC's are in the field. """
+        """
+        Checks to see if type A PICC's are in the field.
+
+        Returns:
+            A tuple containing an MFRC522.ReturnCode,
+            a List of bytes representing the result,
+            and an integer representing the length of the result.
+            If the return value is not MFRC522.ReturnCode.OK,
+            the result is typically an empty list and the length is zero
+        """
         self._clear_bits_after_collision()
-        # Setup short frame format bit framing
         self.write(MFRC522.Register.BitFramingReg, MFRC522.BIT_FRAMING_SHORT_FRAME_FORMAT)
         return self.transceive([MFRC522.PICCCommand.REQA])
 
     def transceive(self, data):
-        # Idle the card, cancelling any current commands
+        """
+        Sends a command and its associated data to the PCD for execution.
+
+        Args:
+            data: A List of bytes. The first byte is expected to be a
+                  MFRC522.PCDCommand or a MFRC522.PICCCommand
+
+        Returns:
+            A tuple containing an MFRC522.ReturnCode,
+            a List of bytes representing the result,
+            and an integer representing the length of the result.
+            If the return value is not MFRC522.ReturnCode.OK,
+            the result is typically an empty list and the length is zero
+        """
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.IDLE)
 
         # Set the Set1 bit ([7]) to 0 which clears the IRQ register
@@ -295,7 +424,6 @@ class MFRC522:
 
         self._write_data_to_fifo(data)
 
-        # Run the transceive command
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.TRANSCEIVE)
 
         # Set StartSend to 1 to start the transmission of data
@@ -305,14 +433,9 @@ class MFRC522:
         results = []
         results_len = 0
 
-        # The countdown is a failsafe against the timer IRQ never firing
-        # If we checked in a while True loop and the timer IRQ never fired and neither did the RX or Idle IRQs
-        # we'd just wait for ever. For example, this would happen if we lost communication with the card.
-        # This limits the wait to a reasonable value
         countdown = MFRC522.TRANSCEIVE_CHECKS
         while countdown > 0:
             countdown -= 1
-            # Read the current status of the interrupts from the register
             interrupts = self.read(MFRC522.Register.ComIrqReg)
 
             if (interrupts & MFRC522.BIT_MASK_COMIRQ_RX_AND_IDLE):
@@ -329,8 +452,7 @@ class MFRC522:
             return (MFRC522.ReturnCode.ERR.COUNTDOWN_TIMEOUT, results, results_len)
 
         errors = self.read(MFRC522.Register.ErrorReg)
-        if  errors & MFRC522.BIT_MASK_TRANCEIVE_ERRORS:
-            # We had an error
+        if errors & MFRC522.BIT_MASK_TRANCEIVE_ERRORS:
             return (MFRC522.ReturnCode.ERR, results, results_len)
 
         # Check how many bytes were written to the FIFO
@@ -346,7 +468,6 @@ class MFRC522:
             bytes_written = MFRC522.FIFO_BUFFER_MAX_SIZE
 
         for i in range(bytes_written):
-            # Read the data from the FIFO
             results.append(self.read(MFRC522.Register.FIFODataReg))
 
         if errors & MFRC522.BIT_MASK_COLLISION_ERRORS:
@@ -356,32 +477,31 @@ class MFRC522:
         # However, I don't need to actually read MiFare data (which is when this is requested)
         # So I didn't implement that check
 
-        # If we reached this point, all the checks have passed, we can return OK
         return (MFRC522.ReturnCode.OK, results, results_len)
 
     def anticollision(self):
         """
-        This method is called anticollision but it actually implements the entire select/anticollision process.
-        There are three cascade levels to work through (1, 2, 3) (SEL) depending on the size of the uid (4-, 7-, or 10-bytes).
-        The process is started with no information about the PICCs and at cascade level 1. An initial request is made and, if
-        only a single PICC responds, we can move directly onto a select operation. If this succeeds, we check the select acknowledge (SAK)
-        to see if the PICC indicated there were more bytes in the uid. If there are, we move to the next cascade level and start the process
-        again. If not, we have the whole uid and it is returned.
+        Performs the anticollision/select process to identify the uid of a type A PICC.
 
-        For reference, here are a couple of terms/acronyms:
-          - SEL -> Select, the actual value of this command changes based on the current level (1, 2, 3)
-          - SAK -> Select acknowledgement, what is returned by the PICC for a full select
-          - NVB -> Number of valid bits, the total number of bytes (high 4 bits) and bits (low 4 bits) we will are sending, this is for the complete
-                   command and not just the UID
+        This method is called anticollision but it actually implements the entire select/anticollision process.
+        There are three cascade levels to work through (1, 2, 3) depending on the size of the uid (4-, 7-, or 10-bytes).
+        The process is started with no information about the PICCs and at cascade level 1.
+        An initial request is made and, if there are collisions between PICCs (or there's only one in the field),
+        we can move directly onto a select operation.
+        If this succeeds, we check the SAK to see if the PICC indicated there were more bytes in the uid.
+        If there are, we move to the next cascade level and start the process again.
+        If not, we have the whole uid and it is returned.
+
+        Returns:
+            A tuple containing an MFRC522.ReturnCode and a List bytes.
+            If the first value is MFRC522.ReturnCode.OK, the List contains 4, 7 or 10 bytes representing the UID
+            If the first value is any other ReturnCode the List is generally the results of the last PCD command or empty
         """
         self._clear_bits_after_collision()
 
-        # Setup the initial values:
         # How many bits within the UID have we verified so far
         known_bits = 0
-        # Which cascade level to start with
         cascade_level = MFRC522.PICCCommand.ANTICOLL_CS1
-        # A list to hold the uid
         uid = [0] * 10
         # A list to hold the data we need to transceive
         buffer = [0] * 9
@@ -414,29 +534,28 @@ class MFRC522:
             # Default to 2 ([0] = SEL, [1] = NVB)
             buffer_index = 2
 
-            # Copy the bits that we know about out of the uid list into the buffer so we can send them along with our commands
-            # We start by determining the total number of bytes (known_bits / 8) (NOTE, make sure this is inside an int() call to avoid floating point results),
-            # then add 1 additionl bit if known_bits is not evenly divisible by 8 (known_bits % 8)
+            # Copy the bits that we know about out of the uid list into the buffer so we can send them along with our commands.
+            # We start by determining the total number of bytes (known_bits / 8).
+            # (NOTE, make sure this is inside an int() call to avoid floating point results)
+            # Then add 1 additional bit if known_bits is not evenly divisible by 8 (known_bits % 8).
             bytes_to_copy = (int(known_bits / 8)) + (1 if known_bits % 8 else 0)
             if bytes_to_copy:
                 # We only have room for 4 bytes
                 bytes_to_copy = min(4, bytes_to_copy)
 
                 # Copy the uid bytes (starting and the uid_start_index) into the buffer in the correct location
-                for i in range(bytes_to_copy):
+                for i, buffer_index in zip(range(bytes_to_copy), range(buffer_index, bytes_to_copy)):
                     buffer[buffer_index] = uid[uid_start_index + i]
-                    buffer_index += 1
             valid_bits = 0
             # Start the SEL/ANTICOLL loop
             select_finished = False
             while not select_finished:
                 if known_bits >= 32:  # We've got all the bits we're going to get for this cascade level, time to select
                     buffer[1] = MFRC522.NVB_SEVEN_BYTES  # SEL, NVB, 4 bytes of UID (or CT + 3 bytes) and the BCC
-                    # We have at least 4 uid bytes at this point
                     # Calculate the Block Check Character (BCC) (buffer[6])
                     buffer[6] = buffer[2] ^ buffer[3] ^ buffer[4] ^ buffer[5]
 
-                    # Calculate a CRC_A value the first 7 bytes of the buffer
+                    # Calculate a CRC_A value on the first 7 bytes of the buffer
                     status, crc_results = self.calculate_crc(buffer[:7])
                     if status != MFRC522.ReturnCode.OK:
                         return (status, crc_results)
@@ -453,7 +572,8 @@ class MFRC522:
                     if valid_bits > 0:
                         transceive_bytes = int(valid_bits / 8)
                         transceive_bits = valid_bits % 8
-                        # Calculate the total number of whole bytes we're going to send, we always send SEL and NVB and we're only sending the valid UID bytes
+                        # Calculate the total number of whole bytes we're going to send,
+                        # we always send SEL and NVB and we're only sending the valid UID bytes
                         nvb_byte_count = 2 + transceive_bytes
                         # Set the NVB - high 4 is equal to the total bytes, low 4 is equal to the remaining bits
                         buffer[1] = (nvb_byte_count << 4) + transceive_bits
@@ -487,14 +607,13 @@ class MFRC522:
                     if collision_position <= valid_bits:
                         # Wait a second, we already know these bits are valid so
                         # something has gone terribly wrong
-                        return (MFRC522.ReturnCode.UNKNOWN_COLLISION_ERROR, result)
+                        return (MFRC522.ReturnCode.UNKNOWN_COLLISION_ERROR, results)
 
                     # Determine how many new bytes and bits we've just learned about
                     new_bytes = int((collision_position - valid_bits) / 8)
-                    new_bits = (collision_position - valid_bits) % 8
-                    # Copy the new information we just got from the results into the buffer for use next time through
-                    # buffer_index is left +1 position from the last byte of the uid copied in
-                    # if we had bits in the last byte, we'll need to go back one (because results now has more bits)
+                    # Copy the new information we just got from the results into the buffer for use in the next iteration.
+                    # buffer_index is set +1 position from the last byte of the uid copied in
+                    # if we had bits in the last byte, we'll need to go back one (because results now has more bits for that byte)
                     # otherwise start copying there
                     copy_index = buffer_index
                     if valid_bits % 8:
@@ -509,14 +628,13 @@ class MFRC522:
                     collision_bit = known_bits % 8
                     # Need to know the specific bit location within the last byte to flip
                     # Also need to account for any byte boundaries so we can't just subtract 1 from the collision bit
-                    bit_to_flip = (known_bits -1) % 8
+                    bit_to_flip = (known_bits - 1) % 8
                     # Determine which index in the buffer contains the bit that needs to be flipped
                     # Start with index 1 ([0] = SEL, [1] = NVB), add the number of whole bytes and then add one if there are still some bits
                     bit_to_flip_index = 1 + (int(known_bits / 8)) + (1 if collision_bit else 0)
                     # Flip the bit by bitwise OR'ing with 1 shifted to the correct bit position
                     buffer[bit_to_flip_index] |= (1 << bit_to_flip)
                 elif status != MFRC522.ReturnCode.OK:
-                    # An error occured
                     return (status, results)
                 else:
                     # We were successful, but sucessful at what?
@@ -525,7 +643,7 @@ class MFRC522:
                         select_finished = True
                     else:
                         # we just performed an anticollision without error so results contains all 32 bits of the UID for this level
-                        # Copy them over to the buffer for the select call
+                        # Copy them over to the buffer
                         # We can blindly copy starting at index 2 ([0] = SEL, [1] = NVB) as the cascade tag isn't a factor
                         # the response is 40 bits, the first 32 are the uid bytes, the last 8 are the BCC value which we can discard
                         for i in range(len(results) - 1):
@@ -540,17 +658,16 @@ class MFRC522:
                 bytes_to_copy = 3
             else:
                 buffer_index_with_uid = 2
-                bytes_to_copy = 4            # Loop with zip?
-            for i in range(bytes_to_copy):
+                bytes_to_copy = 4
+            for i, buffer_index_with_uid in zip(range(bytes_to_copy), range(buffer_index_with_uid, bytes_to_copy)):
                 uid[uid_start_index + i] = buffer[buffer_index_with_uid]
-                buffer_index_with_uid += 1
 
             # Select complete, let's review the SAK
             if (len(results) != 3):
                 # We don't have 1 byte of SAK and 2 bytes of CRC
                 return (MFRC522.ReturnCode.INVALID_SAK_RESULT, results)
 
-            # Let's double check that CRC_A we got back by calculating our own
+            # Let's double check that CRC_A we got back by recalculating our own
             status, crc_result = self.calculate_crc(results[:1])
             if status != MFRC522.ReturnCode.OK:
                 return (status, crc_result)
@@ -560,14 +677,23 @@ class MFRC522:
             # Do we have the whole UID or not?
             if results[0] & MFRC522.BIT_MASK_CASCADE_BIT_SET:
                 # Nope, there's still more
-                cascade_level = self._next_cascade_level(cascade_level)
+                # Take advantage of the fact that MFRC522.PICCCommand is an IntEnum and each cascade level is +2 from the previous
+                cascade_level = MFRC522.PICCCommand(cascade_level + 2)
             else:
-                uid_complete = True
-
-        return (MFRC522.ReturnCode.OK, uid[:self._uid_size(cascade_level)])
+                return (MFRC522.ReturnCode.OK, uid[:self._uid_size(cascade_level)])
 
     def calculate_crc(self, data):
-        # Idle the card, cancelling any current commands
+        """
+        Instructs the PCB to calculate a CRC value on the provided data.
+
+        Args:
+            data: A List of bytes to calculate the CRC value on.
+
+        Returns:
+            A MFRC522.ReturnCode and a List of 2 bytes representing the CRC value.
+            If the return code is not MFRC522.ReturnCode.OK the List is the results
+            of the last command or an empty List.
+        """
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.IDLE)
 
         # Clear the CRC IRQ bit
@@ -576,7 +702,6 @@ class MFRC522:
         self.set_bits(MFRC522.Register.FIFOLevelReg, MFRC522.BIT_MASK_MSB)
         self._write_data_to_fifo(data)
 
-        # Calculate the CRC
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.CALCCRC)
 
         countdown = MFRC522.CRC_CHECKS
@@ -594,34 +719,30 @@ class MFRC522:
         return (MFRC522.ReturnCode.COUNTDOWN_TIMEOUT, [])
 
     def _clear_bits_after_collision(self):
+        """ Sets ValuesAfterColl in the CollReg to zero to ensure all bits are cleared after a collision."""
         # Set ValuesAfterColl to zero to ensure all bits are cleared after a collision
         self.unset_bits(MFRC522.Register.CollReg, MFRC522.BIT_MASK_MSB)
 
     def _write_data_to_fifo(self, data):
-        # Write the data to the FIFO Data register
+        """ Writes the List of bytes to the FIFO register. """
         for datum in data:
             self.write(MFRC522.Register.FIFODataReg, datum)
 
-    def _next_cascade_level(self, cascade_level):
-        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS1:
-            return MFRC522.PICCCommand.ANTICOLL_CS2
-        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
-            return MFRC522.PICCCommand.ANTICOLL_CS3
-
-    def _uid_size(self, cascade_level):
-        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS1:
-            # single
-            return 4
-        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS2:
-            # double
-            return 7
-        if cascade_level == MFRC522.PICCCommand.ANTICOLL_CS3:
-            # triple
-            return 10
-
     def _uid_bytes_to_hex_string(self, uid):
-        str = ''
-        # The uid bytes come back in the reverse order from what we want to display
+        """
+        Converts the UID to a hex string.
+
+        Args:
+            uid: A List of 4, 7 or 10 bytes representing the individual UID values
+
+        Returns:
+            A string containing each of the bytes in two digit HEX format and in reverse order.
+            The order is reversed as I'm attempting to duplicate the string provided by the evdev-based
+            reader which returns the values in that same order.
+        """
+        rv = []
         for digit in reversed(uid):
-            str += f'{digit:0>2X}'
-        return str
+            # f-string format indicates to pad the value with up to 2 zeros (0>2)
+            # and use uppercase hex values
+            rv.append(f'{digit:0>2X}')
+        return ''.join(rv)
