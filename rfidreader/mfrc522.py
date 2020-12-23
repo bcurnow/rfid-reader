@@ -231,7 +231,13 @@ class MFRC522:
     TRELOAD_HIGH_EIGHT = 0b00000011
     # The low 8 bits of the TReload value (value = 232)
     TRELOAD_LOW_EIGHT = 0b11101000
-
+    # Map between the cascade level and the number of bytes in the UID
+    # This is mostly because I don't like a method with if/else to do this
+    UID_SIZE_AT_CASCADE_LEVEL = {
+        PICCCommand.ANTICOLL_CS1: 4,
+        PICCCommand.ANTICOLL_CS2: 7,
+        PICCCommand.ANTICOLL_CS3: 10,
+    }
     # This is the number of IRQ checks to make for the TRANSCEIVE command.
     # This value is based on the TReload value as this indicates how many 25 microsecond delays.
     # We want to check the IRQ twice any many times to ensure that our IRQ checking loop is
@@ -680,7 +686,7 @@ class MFRC522:
                 # Take advantage of the fact that MFRC522.PICCCommand is an IntEnum and each cascade level is +2 from the previous
                 cascade_level = MFRC522.PICCCommand(cascade_level + 2)
             else:
-                return (MFRC522.ReturnCode.OK, uid[:self._uid_size(cascade_level)])
+                return (MFRC522.ReturnCode.OK, uid[:MFRC.UID_SIZE_AT_CASCADE_LEVEL(cascade_level)])
 
     def calculate_crc(self, data):
         """
