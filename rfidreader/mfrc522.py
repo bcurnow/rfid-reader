@@ -397,7 +397,7 @@ class MFRC522:
         Returns:
             A tuple containing an MFRC522.ReturnCode,
             a List of bytes representing the result,
-            and an integer representing the length of the result.
+            and an int representing the length of the result.
             If the return value is not MFRC522.ReturnCode.OK,
             the result is typically an empty list and the length is zero
         """
@@ -432,7 +432,7 @@ class MFRC522:
 
         self.write(MFRC522.Register.CommandReg, MFRC522.PCDCommand.TRANSCEIVE)
 
-        # Set StartSend to 1 to start the transmission of data
+        # Set StartSend [7] to 1 to start the transmission of data
         self.set_bits(MFRC522.Register.BitFramingReg, MFRC522.BIT_MASK_MSB)
 
         # Setup default return values
@@ -455,7 +455,7 @@ class MFRC522:
         if countdown == 0:
             # None of the interrupts fired before the countdown finished
             # Did we lose connectivity with the MFRC522?
-            return (MFRC522.ReturnCode.ERR.COUNTDOWN_TIMEOUT, results, results_len)
+            return (MFRC522.ReturnCode.COUNTDOWN_TIMEOUT, results, results_len)
 
         errors = self.read(MFRC522.Register.ErrorReg)
         if errors & MFRC522.BIT_MASK_TRANCEIVE_ERRORS:
@@ -489,10 +489,10 @@ class MFRC522:
         """
         Performs the anticollision/select process to identify the uid of a type A PICC.
 
-        This method is called anticollision but it actually implements the entire select/anticollision process.
+        This method is called anticollision but it actually implements the entire anticollision/select process.
         There are three cascade levels to work through (1, 2, 3) depending on the size of the uid (4-, 7-, or 10-bytes).
         The process is started with no information about the PICCs and at cascade level 1.
-        An initial request is made and, if there are collisions between PICCs (or there's only one in the field),
+        An initial request is made and, if there are no collisions between PICCs (or there's only one in the field),
         we can move directly onto a select operation.
         If this succeeds, we check the SAK to see if the PICC indicated there were more bytes in the uid.
         If there are, we move to the next cascade level and start the process again.
@@ -640,6 +640,8 @@ class MFRC522:
                     bit_to_flip_index = 1 + (int(known_bits / 8)) + (1 if collision_bit else 0)
                     # Flip the bit by bitwise OR'ing with 1 shifted to the correct bit position
                     buffer[bit_to_flip_index] |= (1 << bit_to_flip)
+                    # The known bits have all be validated so reset valid_bits
+                    valid_bits = known_bits
                 elif status != MFRC522.ReturnCode.OK:
                     return (status, results)
                 else:
@@ -658,7 +660,7 @@ class MFRC522:
                         # Run the select loop again
 
             # We've completed the select for this cascade level, copy over the known uid bytes
-            # Need to adjust based on whether we're received a cascade tag or not
+            # Need to adjust based on whether we've received a cascade tag or not
             if buffer[2] == MFRC522.CASCADE_TAG:
                 buffer_index_with_uid = 3
                 bytes_to_copy = 3
@@ -726,7 +728,6 @@ class MFRC522:
 
     def _clear_bits_after_collision(self):
         """ Sets ValuesAfterColl in the CollReg to zero to ensure all bits are cleared after a collision."""
-        # Set ValuesAfterColl to zero to ensure all bits are cleared after a collision
         self.unset_bits(MFRC522.Register.CollReg, MFRC522.BIT_MASK_MSB)
 
     def _write_data_to_fifo(self, data):
