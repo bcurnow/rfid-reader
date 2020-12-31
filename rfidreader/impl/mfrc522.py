@@ -1,4 +1,4 @@
-from rfidreader.mfrc522 import MFRC522
+from mfrc522reader import MFRC522
 
 def register(config):
     return MFRC522Reader(config)
