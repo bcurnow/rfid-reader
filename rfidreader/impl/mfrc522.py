@@ -1,12 +1,13 @@
 from mfrc522reader import MFRC522
 
+
 def register(config):
     return MFRC522Reader(config)
 
 
 class MFRC522Reader:
     def __init__(self, config):
-        self.reader = MFRC522(**config)
+        self.reader = MFRC522(config)
 
     def read(self, timeout=None):
         """

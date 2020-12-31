@@ -1,6 +1,6 @@
 import RPi.GPIO as GPIO
 import pytest
-from unittest.mock import call, patch, PropertyMock
+from unittest.mock import patch
 
 from rfidreader.impl.mfrc522 import MFRC522Reader, register
 
@@ -23,11 +23,11 @@ def test_MFRC522Reader___init__(MFRC522, config):
     internal_reader = MFRC522.return_value
     reader = MFRC522Reader(config)
     assert reader.reader == internal_reader
-    MFRC522.assert_called_once_with(**config)
+    MFRC522.assert_called_once_with(config)
 
 
 @pytest.mark.parametrize(
-    ('expected','timeout'),
+    ('expected', 'timeout'),
     [
         (None, 10),
         (0x80607A22532304, 10),

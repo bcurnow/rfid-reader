@@ -1,10 +1,15 @@
 <!-- MDTOC maxdepth:6 firsth1:1 numbering:0 flatten:0 bullets:1 updateOnSave:1 -->
 
+- [2.0.1](#201)   
 - [2.0.0](#200)   
 - [1.0.1](#101)   
 - [1.0.0](#100)   
 
 <!-- /MDTOC -->
+
+# 2.0.1
+
+* Fixed error where the configuration was being expanded instead of being passed as a dict and therefore causing an `unexpected keyword argument` error.
 
 # 2.0.0
 NOTE: Breaking Changes
