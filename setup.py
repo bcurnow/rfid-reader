@@ -29,8 +29,7 @@ setup(
     extras_require={
         'evdev': 'evdev',
         'mfrc522': [
-            'mfrc522',
-            'RPi.GPIO'
+            'mfrc522-reader@https://github.com/bcurnow/mfrc522-reader/releases/download/v1.0.0/mfrc522_reader-1.0.0-py3-none-any.whl',
         ]
 
     },
