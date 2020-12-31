@@ -29,7 +29,7 @@ setup(
     extras_require={
         'evdev': 'evdev',
         'mfrc522': [
-            'https://github.com/bcurnow/mfrc522-reader/releases/download/v1.0.1/mfrc522_reader-1.0.1-py3-none-any.whl#egg=mfrc522-reader',
+            'mfrc522-reader@git+https://github.com/bcurnow/mfrc522-reader/releases/download/v1.0.1/mfrc522_reader-1.0.1-py3-none-any.whl#egg=mfrc522-reader',
         ]
 
     },
