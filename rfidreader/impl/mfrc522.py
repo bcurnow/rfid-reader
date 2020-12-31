@@ -7,7 +7,11 @@ def register(config):
 
 class MFRC522Reader:
     def __init__(self, config):
-        self.reader = MFRC522(config)
+        init_params = {}
+        for option in ['bus', 'device', 'gpio_mode', 'rst_pin']:
+            if option in config:
+                init_params[option] = config[option]
+        self.reader = MFRC522(**init_params)
 
     def read(self, timeout=None):
         """

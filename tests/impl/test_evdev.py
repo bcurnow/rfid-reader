@@ -21,23 +21,25 @@ def _raw_event(value=1, code=11):
 
 
 @pytest.mark.parametrize(
-    ('event_ready_timeout', 'device_name'),
+    ('event_ready_timeout', 'device_name', 'additional_config'),
     [
-        (None, None),
-        (500, None),
-        (None, '/dev/test'),
-        (500, '/dev/test'),
+        (None, None, {}),
+        (500, None, {}),
+        (None, '/dev/test', {}),
+        (500, '/dev/test', {}),
+        (500, '/dev/test', {'bogus param 1': 'value', 'bogus param 2': None}),
     ],
-    ids=['no config', 'timeout only', 'device_name only', 'timeout and device_name']
+    ids=['no config', 'timeout only', 'device_name only', 'timeout and device_name', 'extra config params']
     )
 @patch('rfidreader.impl.evdev.select')
 @patch('rfidreader.impl.evdev.evdev')
-def test_EvdevReader___init__(evdev, select, event_ready_timeout, device_name):
+def test_EvdevReader___init__(evdev, select, event_ready_timeout, device_name, additional_config):
     config = {}
     if event_ready_timeout:
         config['event_ready_timeout'] = event_ready_timeout
     if device_name:
         config['device_name'] = device_name
+    config.update(additional_config)
     device = evdev.InputDevice.return_value
     poller = select.poll.return_value
     reader = EvdevReader(config)

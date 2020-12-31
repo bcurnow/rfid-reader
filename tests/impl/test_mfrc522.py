@@ -6,24 +6,47 @@ from rfidreader.impl.mfrc522 import MFRC522Reader, register
 
 
 @pytest.mark.parametrize(
-    ('config',),
+    ('config', 'used_config'),
     [
-        ({},),
-        ({
-            'bus': 0,
-            'device': 0,
-            'gpio_mode': GPIO.BOARD,
-            'pin_rst': None,
-        },),
+        (
+            {}, None,
+        ),
+        (
+            {
+                'bus': 0,
+                'device': 0,
+                'gpio_mode': GPIO.BOARD,
+                'rst_pin': None,
+            },
+            None,
+        ),
+        (
+            {
+                'bus': 0,
+                'device': 0,
+                'gpio_mode': GPIO.BOARD,
+                'rst_pin': None,
+                'bogus param 1': 'value',
+                'bogus param 2': None,
+            },
+            {
+                'bus': 0,
+                'device': 0,
+                'gpio_mode': GPIO.BOARD,
+                'rst_pin': None,
+            },
+        ),
     ],
-    ids=['no config', 'all config']
+    ids=['no config', 'all config', 'extra config']
     )
 @patch('rfidreader.impl.mfrc522.MFRC522')
-def test_MFRC522Reader___init__(MFRC522, config):
+def test_MFRC522Reader___init__(MFRC522, config, used_config):
+    if used_config is None:
+        used_config = config
     internal_reader = MFRC522.return_value
     reader = MFRC522Reader(config)
     assert reader.reader == internal_reader
-    MFRC522.assert_called_once_with(config)
+    MFRC522.assert_called_once_with(**used_config)
 
 
 @pytest.mark.parametrize(
