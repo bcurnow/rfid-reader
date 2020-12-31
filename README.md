@@ -38,16 +38,14 @@ This implementation supports the following configuration parameters passed in vi
 * `event_ready_timeout` - The amount of time to wait for the next set of data once the `select` call has indicated there is data. In normal operations, this should not need to be changed. Default: `100`
 
 ### mfrc522
-This implementation is based on [mfrc522](https://pypi.org/project/mfrc522/). This is used for RFID readers that connect via SPI.
+This implementation is based on [mfrc522-reader](https://github.com/bcurnow/mfrc522-reader). This is used for MFRC522 RFID readers that connect via SPI.
 
 #### Additional Configuration
 This implementation supports the following configuration parameters passed in via `<config>`:
 * `bus` - The bus index to connect to. This is used to construct the name of the device. For example, `/dev/spidev<bus>.<device>`. Default: `0`
 * `device` - The device index to connect to. This is used to construcct the name of the device. For example, `/dev/spidev<bus>.<device>`. Default: `0`
-* `spd` - The maximum speed the device can communcat at (in Hz). Default: `1000000`
-* `pin_mode` -  The numbering system used. Default: `10` (GPIO.BOARD)
-* `pin_rst` - The output pin. If set to `-1` and `pin_mode` is 11 (GPIO.BCM) then this is set to 15, if `-1` and `pin_mode` is 10 (GPIO.BOARD) this is set to 22. If set to a value other than `-1` then that value will be used as the output pin. Default: `-1`
-* `debugLevel` - The logging level for the `mfrc522Logger` logger. Default: `WARNING`
+* `gpio_mode` -  The numbering system used. Default: `10` (GPIO.BOARD)
+* `rst_pin` - The output pin. If set to `-1` and `pin_mode` is 11 (GPIO.BCM) then this is set to 15, if `-1` and `pin_mode` is 10 (GPIO.BOARD) this is set to 22. If set to a value other than `-1` then that value will be used as the output pin. Default: `-1`
 
 ## Examples
 See the `examples` folder for more examples.
