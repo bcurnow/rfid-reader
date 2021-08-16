@@ -1,5 +1,6 @@
 <!-- MDTOC maxdepth:6 firsth1:1 numbering:0 flatten:0 bullets:1 updateOnSave:1 -->
 
+- [2.0.5](#205)   
 - [2.0.4](#204)   
 - [2.0.3](#203)   
 - [2.0.2](#202)   
@@ -9,6 +10,9 @@
 - [1.0.0](#100)   
 
 <!-- /MDTOC -->
+
+# 2.0.5
+* Added logic to explicitly convert all parameters that should be integers to integers.
 
 # 2.0.4
 * Pulled in the mfrc522_reader version 1.0.2 to fix an off by one bug impacting double and triple PICCs.
