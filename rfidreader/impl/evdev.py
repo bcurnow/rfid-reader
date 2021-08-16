@@ -34,7 +34,7 @@ class EvdevReader:
 
     def __init__(self, config):
         if 'event_ready_timeout' in config:
-            self.event_ready_timeout = config['event_ready_timeout']
+            self.event_ready_timeout = int(config['event_ready_timeout'])
         else:
             self.event_ready_timeout = EvdevReader.EVENT_READY_TIMEOUT
 

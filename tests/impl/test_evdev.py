@@ -54,6 +54,12 @@ def test_EvdevReader___init__(evdev, select, event_ready_timeout, device_name, a
     evdev.InputDevice.assert_called_once_with(device_name)
 
 
+def test_EvdevReader___init___int_conversion():
+    with pytest.raises(ValueError) as excInfo:
+        EvdevReader({'event_ready_timeout': 'not an int'})
+    assert "invalid literal for int() with base 10: 'not an int'" == str(excInfo.value)
+
+
 @pytest.mark.parametrize(
     ('delete_attr', 'close_side_effect'),
     [
