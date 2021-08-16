@@ -10,7 +10,11 @@ class MFRC522Reader:
         init_params = {}
         for option in ['bus', 'device', 'gpio_mode', 'rst_pin']:
             if option in config:
-                init_params[option] = config[option]
+                if config[option] is None:
+                    init_params[option] = config[option]
+                else:
+                    init_params[option] = int(config[option])
+
         self.reader = MFRC522(**init_params)
 
     def read(self, timeout=None):

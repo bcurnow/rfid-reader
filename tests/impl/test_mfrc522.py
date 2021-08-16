@@ -50,6 +50,23 @@ def test_MFRC522Reader___init__(MFRC522, config, used_config):
 
 
 @pytest.mark.parametrize(
+    ('config'),
+    [
+        ({'bus': 'not an int'}),
+        ({'device': 'not an int'}),
+        ({'gpio_mode': 'not an int'}),
+        ({'rst_pin': 'not an int'}),
+    ],
+    ids=['bus', 'device', 'gpio_mode', 'rst_pin']
+    )
+@patch('rfidreader.impl.mfrc522.MFRC522')
+def test_MFRC522Reader___init___int_conversion(MFRC522, config):
+    with pytest.raises(ValueError) as excInfo:
+        MFRC522Reader(config)
+    assert "invalid literal for int() with base 10: 'not an int'" == str(excInfo.value)
+
+
+@pytest.mark.parametrize(
     ('expected', 'timeout'),
     [
         (None, 10),
