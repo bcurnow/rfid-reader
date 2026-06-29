@@ -75,6 +75,12 @@ Run `make help` to see this list at any time.
 
 ### Local Python Environment
 
+On Linux, ensure the following system packages are installed before running `make setup`:
+
+```bash
+sudo apt-get install build-essential python3-dev
+```
+
 Use the `setup` target to create a virtual environment and install all dependencies:
 
 ```bash
