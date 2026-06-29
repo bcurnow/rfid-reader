@@ -17,7 +17,7 @@ setup(
     url='https://github.com/bcurnow/rfid-reader',
     packages=find_packages(),
     classifiers=[
-        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.13',
         'License :: OSI Approved :: Apache Software License'
         'Operating System :: OS Independent',
         'Intended Audience :: Developers',

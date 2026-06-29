@@ -1,4 +1,4 @@
-from python:3
+FROM python:3.13-slim
 
 ARG USER_ID
 ARG GROUP_ID
@@ -23,9 +23,10 @@ RUN groupadd -g ${INPUT_GROUP_ID} input \
     && usermod -a -G input rfidreader
 
 RUN apt-get update && apt-get -y install --no-install-recommends \
-    vim \
-    sudo \
+    build-essential \
     less \
+    sudo \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ./docker-files/home/.* /home/rfidreader/
