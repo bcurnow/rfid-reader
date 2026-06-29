@@ -8,7 +8,7 @@ def register(config):
 class MFRC522Reader:
     def __init__(self, config):
         init_params = {}
-        for option in ['bus', 'device', 'gpio_mode', 'rst_pin']:
+        for option in ["bus", "device", "gpio_mode", "rst_pin"]:
             if option in config:
                 if config[option] is None:
                     init_params[option] = config[option]

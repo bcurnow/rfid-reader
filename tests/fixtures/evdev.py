@@ -8,7 +8,7 @@ from rfidreader.impl.evdev import EvdevReader
 
 @pytest.fixture()
 def evdev_reader():
-    with patch('rfidreader.impl.evdev.evdev') as mock_evdev, patch('rfidreader.impl.evdev.select'):
+    with patch("rfidreader.impl.evdev.evdev") as mock_evdev, patch("rfidreader.impl.evdev.select"):
         # Make sure to that KeyEvent is a type so the isinstance check works
         mock_evdev.events.KeyEvent = evdev.events.KeyEvent
         # Make sure that the categorize method is not mock so we don't have to mock out the calls

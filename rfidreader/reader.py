@@ -8,6 +8,7 @@ class RFIDReader:
     config:      A dictionary of configuration options which can be implementation dependent.
                  Will be passed passed un-modified to the implementation.
     """
+
     def __init__(self, reader_type, config):
         self.config = config
         self.reader = load_impl(reader_type, config)

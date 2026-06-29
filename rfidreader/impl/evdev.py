@@ -7,41 +7,41 @@ def register(config):
 
 
 class EvdevReader:
-    """ This class allows reading for a keyboard presented device using evdev."""
+    """This class allows reading for a keyboard presented device using evdev."""
 
     """ The timeout to use once we've determined there are events ready """
     EVENT_READY_TIMEOUT = 100
 
     """ Maps the hex key codes (0-9A-F) to characters so we can translate events from the reader."""
     KEY_MAP = {
-        'KEY_0': '0',
-        'KEY_1': '1',
-        'KEY_2': '2',
-        'KEY_3': '3',
-        'KEY_4': '4',
-        'KEY_5': '5',
-        'KEY_6': '6',
-        'KEY_7': '7',
-        'KEY_8': '8',
-        'KEY_9': '9',
-        'KEY_A': 'A',
-        'KEY_B': 'B',
-        'KEY_C': 'C',
-        'KEY_D': 'D',
-        'KEY_E': 'E',
-        'KEY_F': 'F',
+        "KEY_0": "0",
+        "KEY_1": "1",
+        "KEY_2": "2",
+        "KEY_3": "3",
+        "KEY_4": "4",
+        "KEY_5": "5",
+        "KEY_6": "6",
+        "KEY_7": "7",
+        "KEY_8": "8",
+        "KEY_9": "9",
+        "KEY_A": "A",
+        "KEY_B": "B",
+        "KEY_C": "C",
+        "KEY_D": "D",
+        "KEY_E": "E",
+        "KEY_F": "F",
     }
 
     def __init__(self, config):
-        if 'event_ready_timeout' in config:
-            self.event_ready_timeout = int(config['event_ready_timeout'])
+        if "event_ready_timeout" in config:
+            self.event_ready_timeout = int(config["event_ready_timeout"])
         else:
             self.event_ready_timeout = EvdevReader.EVENT_READY_TIMEOUT
 
-        if 'device_name' in config:
-            self.device_name = config['device_name']
+        if "device_name" in config:
+            self.device_name = config["device_name"]
         else:
-            self.device_name = '/dev/input/event0'
+            self.device_name = "/dev/input/event0"
 
         self.device = evdev.InputDevice(self.device_name)
         self.poller = select.poll()
@@ -49,7 +49,7 @@ class EvdevReader:
 
     def __del__(self):
         try:
-            if hasattr(self, 'device'):
+            if hasattr(self, "device"):
                 self.device.close()
         except RuntimeError:
             # Need to catch RuntimeError due to https://github.com/gvalkov/python-evdev/issues/120
@@ -78,10 +78,10 @@ class EvdevReader:
 
         # All possible events have been read, convert the data to a string
         if data:
-            return ''.join(data)
+            return "".join(data)
 
     def _read_all_available_events(self, data):
-        """ Reads all current ready events from device and adds the translated data to the data list."""
+        """Reads all current ready events from device and adds the translated data to the data list."""
         try:
             for raw_event in self.device.read():
                 event = evdev.categorize(raw_event)
@@ -95,7 +95,7 @@ class EvdevReader:
             pass
 
     def _translate_event(self, event):
-        """ Handle KeyEvents and specifically key_down events as these indicate data we care about. """
+        """Handle KeyEvents and specifically key_down events as these indicate data we care about."""
         if isinstance(event, evdev.events.KeyEvent) and event.keystate == evdev.events.KeyEvent.key_down:
             if event.keycode in EvdevReader.KEY_MAP:
                 return EvdevReader.KEY_MAP[event.keycode]

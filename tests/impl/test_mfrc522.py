@@ -6,40 +6,41 @@ from rfidreader.impl.mfrc522 import MFRC522Reader, register
 
 
 @pytest.mark.parametrize(
-    ('config', 'used_config'),
+    ("config", "used_config"),
     [
         (
-            {}, None,
+            {},
+            None,
         ),
         (
             {
-                'bus': 0,
-                'device': 0,
-                'gpio_mode': GPIO.BOARD,
-                'rst_pin': None,
+                "bus": 0,
+                "device": 0,
+                "gpio_mode": GPIO.BOARD,
+                "rst_pin": None,
             },
             None,
         ),
         (
             {
-                'bus': 0,
-                'device': 0,
-                'gpio_mode': GPIO.BOARD,
-                'rst_pin': None,
-                'bogus param 1': 'value',
-                'bogus param 2': None,
+                "bus": 0,
+                "device": 0,
+                "gpio_mode": GPIO.BOARD,
+                "rst_pin": None,
+                "bogus param 1": "value",
+                "bogus param 2": None,
             },
             {
-                'bus': 0,
-                'device': 0,
-                'gpio_mode': GPIO.BOARD,
-                'rst_pin': None,
+                "bus": 0,
+                "device": 0,
+                "gpio_mode": GPIO.BOARD,
+                "rst_pin": None,
             },
         ),
     ],
-    ids=['no config', 'all config', 'extra config']
-    )
-@patch('rfidreader.impl.mfrc522.MFRC522')
+    ids=["no config", "all config", "extra config"],
+)
+@patch("rfidreader.impl.mfrc522.MFRC522")
 def test_MFRC522Reader___init__(MFRC522, config, used_config):
     if used_config is None:
         used_config = config
@@ -50,16 +51,16 @@ def test_MFRC522Reader___init__(MFRC522, config, used_config):
 
 
 @pytest.mark.parametrize(
-    ('config'),
+    ("config"),
     [
-        ({'bus': 'not an int'}),
-        ({'device': 'not an int'}),
-        ({'gpio_mode': 'not an int'}),
-        ({'rst_pin': 'not an int'}),
+        ({"bus": "not an int"}),
+        ({"device": "not an int"}),
+        ({"gpio_mode": "not an int"}),
+        ({"rst_pin": "not an int"}),
     ],
-    ids=['bus', 'device', 'gpio_mode', 'rst_pin']
-    )
-@patch('rfidreader.impl.mfrc522.MFRC522')
+    ids=["bus", "device", "gpio_mode", "rst_pin"],
+)
+@patch("rfidreader.impl.mfrc522.MFRC522")
 def test_MFRC522Reader___init___int_conversion(MFRC522, config):
     with pytest.raises(ValueError) as excInfo:
         MFRC522Reader(config)
@@ -67,15 +68,10 @@ def test_MFRC522Reader___init___int_conversion(MFRC522, config):
 
 
 @pytest.mark.parametrize(
-    ('expected', 'timeout'),
-    [
-        (None, 10),
-        (0x80607A22532304, 10),
-        (None, -1),
-        (None, None)
-    ],
-    )
-@patch('rfidreader.impl.mfrc522.MFRC522')
+    ("expected", "timeout"),
+    [(None, 10), (0x80607A22532304, 10), (None, -1), (None, None)],
+)
+@patch("rfidreader.impl.mfrc522.MFRC522")
 def test_MFRC522Reader_read(MFRC522, expected, timeout):
     internal_reader = MFRC522.return_value
     internal_reader.read_uid.return_value = expected
@@ -85,7 +81,7 @@ def test_MFRC522Reader_read(MFRC522, expected, timeout):
     internal_reader.read_uid.assert_called_once_with(timeout)
 
 
-@patch('rfidreader.impl.mfrc522.MFRC522')
+@patch("rfidreader.impl.mfrc522.MFRC522")
 def test_register(MFRC522):
     reader = register({})
     assert isinstance(reader, MFRC522Reader)

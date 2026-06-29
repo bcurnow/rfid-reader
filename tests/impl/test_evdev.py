@@ -21,30 +21,30 @@ def _raw_event(value=1, code=11):
 
 
 @pytest.mark.parametrize(
-    ('event_ready_timeout', 'device_name', 'additional_config'),
+    ("event_ready_timeout", "device_name", "additional_config"),
     [
         (None, None, {}),
         (500, None, {}),
-        (None, '/dev/test', {}),
-        (500, '/dev/test', {}),
-        (500, '/dev/test', {'bogus param 1': 'value', 'bogus param 2': None}),
+        (None, "/dev/test", {}),
+        (500, "/dev/test", {}),
+        (500, "/dev/test", {"bogus param 1": "value", "bogus param 2": None}),
     ],
-    ids=['no config', 'timeout only', 'device_name only', 'timeout and device_name', 'extra config params']
-    )
-@patch('rfidreader.impl.evdev.select')
-@patch('rfidreader.impl.evdev.evdev')
+    ids=["no config", "timeout only", "device_name only", "timeout and device_name", "extra config params"],
+)
+@patch("rfidreader.impl.evdev.select")
+@patch("rfidreader.impl.evdev.evdev")
 def test_EvdevReader___init__(evdev, select, event_ready_timeout, device_name, additional_config):
     config = {}
     if event_ready_timeout:
-        config['event_ready_timeout'] = event_ready_timeout
+        config["event_ready_timeout"] = event_ready_timeout
     if device_name:
-        config['device_name'] = device_name
+        config["device_name"] = device_name
     config.update(additional_config)
     device = evdev.InputDevice.return_value
     poller = select.poll.return_value
     reader = EvdevReader(config)
     if not device_name:
-        device_name = '/dev/input/event0'
+        device_name = "/dev/input/event0"
     if not event_ready_timeout:
         event_ready_timeout = 100
     assert reader.device_name == device_name
@@ -56,25 +56,18 @@ def test_EvdevReader___init__(evdev, select, event_ready_timeout, device_name, a
 
 def test_EvdevReader___init___int_conversion():
     with pytest.raises(ValueError) as excInfo:
-        EvdevReader({'event_ready_timeout': 'not an int'})
+        EvdevReader({"event_ready_timeout": "not an int"})
     assert "invalid literal for int() with base 10: 'not an int'" == str(excInfo.value)
 
 
 @pytest.mark.parametrize(
-    ('delete_attr', 'close_side_effect'),
-    [
-        (None, None),
-        ('device', None),
-        (None, RuntimeError)
-    ],
-    ids=['device exists', 'device is missing', 'close throws error']
-    )
-@patch('rfidreader.impl.evdev.evdev')
+    ("delete_attr", "close_side_effect"),
+    [(None, None), ("device", None), (None, RuntimeError)],
+    ids=["device exists", "device is missing", "close throws error"],
+)
+@patch("rfidreader.impl.evdev.evdev")
 def test_EvdevReader___del__(evdev, delete_attr, close_side_effect):
-    config = {
-        'event_ready_timeout': 500,
-        'device_name': '/dev/test'
-        }
+    config = {"event_ready_timeout": 500, "device_name": "/dev/test"}
     device = evdev.InputDevice.return_value
     device.fileno.return_value = 4
     reader = EvdevReader(config)
@@ -83,28 +76,22 @@ def test_EvdevReader___del__(evdev, delete_attr, close_side_effect):
     if close_side_effect:
         device.close.side_effect = close_side_effect
     reader.__del__()
-    evdev.InputDevice.assert_called_once_with('/dev/test')
+    evdev.InputDevice.assert_called_once_with("/dev/test")
     if not delete_attr and not close_side_effect:
         device.close.assert_called_once()
 
 
 @pytest.mark.parametrize(
-    ('poll_side_effect', 'raw_events', 'expected', 'timeout', 'timeout_call'),
+    ("poll_side_effect", "raw_events", "expected", "timeout", "timeout_call"),
     [
-        ([[1], []], [_raw_event(), _raw_event(code=9)], '08', 10, 10 * 1000),
+        ([[1], []], [_raw_event(), _raw_event(code=9)], "08", 10, 10 * 1000),
         ([[1], []], [_raw_event(code=34), _raw_event(code=35)], None, 10, 10 * 1000),
-        ([[1], []], [_raw_event(), _raw_event(code=9)], '08', None, None),
-        ([[1], []], [_raw_event(), _raw_event(code=9)], '08', -1, -1),
-        ([[]], [], None, 10, 10 * 1000)
+        ([[1], []], [_raw_event(), _raw_event(code=9)], "08", None, None),
+        ([[1], []], [_raw_event(), _raw_event(code=9)], "08", -1, -1),
+        ([[]], [], None, 10, 10 * 1000),
     ],
-    ids=[
-     'default',
-     'returns None',
-     'timeout None',
-     'timeout negative value',
-     'timed out'
-     ]
-    )
+    ids=["default", "returns None", "timeout None", "timeout negative value", "timed out"],
+)
 def test_EvdevReader_read(evdev_reader, poll_side_effect, raw_events, expected, timeout, timeout_call):
     poller = evdev_reader.poller
     poller.poll.side_effect = poll_side_effect
@@ -146,19 +133,19 @@ def test_EvdevReader__read_all_available_events_translate_returns_none(evdev_rea
 
 
 @pytest.mark.parametrize(
-    ('expected', 'event'),
+    ("expected", "event"),
     [
-        (None, 'this is not an event type'),
+        (None, "this is not an event type"),
         (None, evdev.events.KeyEvent(_raw_event(value=0))),
     ],
-    ids=['Translate a non-event', 'Translate an event there is no mapping for']
-    )
+    ids=["Translate a non-event", "Translate an event there is no mapping for"],
+)
 def test_EvdevReader__translate_event_wrong_event_type(evdev_reader, expected, event):
     assert evdev_reader._translate_event(event) is expected
 
 
-@patch('rfidreader.impl.evdev.select')
-@patch('rfidreader.impl.evdev.evdev')
+@patch("rfidreader.impl.evdev.select")
+@patch("rfidreader.impl.evdev.evdev")
 def test_register(evdev, select):
     reader = register({})
     assert isinstance(reader, EvdevReader)

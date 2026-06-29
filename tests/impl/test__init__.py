@@ -10,21 +10,21 @@ from rfidreader.impl import load_impl
 
 
 @pytest.mark.parametrize(
-    ('reader_type', 'import_module_return_value', 'expected_reader_class'),
+    ("reader_type", "import_module_return_value", "expected_reader_class"),
     [
-
-        ('mock_impl', ('mock_impl',), ('mock_impl', 'MockReader')),
-        ('unknown_type', (), None),
-        ('not_an_impl', ('not_an_impl',), None),
+        ("mock_impl", ("mock_impl",), ("mock_impl", "MockReader")),
+        ("unknown_type", (), None),
+        ("not_an_impl", ("not_an_impl",), None),
     ],
-    ids=['found', 'module notfound', 'found no register']
-    )
-@patch('rfidreader.impl.import_module')
-@patch('rfidreader.impl.iter_modules')
+    ids=["found", "module notfound", "found no register"],
+)
+@patch("rfidreader.impl.import_module")
+@patch("rfidreader.impl.iter_modules")
 def test_load_impl(iter_modules, import_module, reader_type, import_module_return_value, expected_reader_class):
     # Make sure that the modules under mocks are imported
     from mocks import mock_impl, not_an_impl  # noqa: F401
     import rfidreader.impl as real_pkg
+
     iter_modules.return_value = pkgutil.iter_modules(path=mocks.__path__)
     import_module.return_value = get_by_name(mocks, import_module_return_value)
     reader = load_impl(reader_type, {})
@@ -34,16 +34,16 @@ def test_load_impl(iter_modules, import_module, reader_type, import_module_retur
         assert reader is None
     iter_modules.assert_called_once_with(path=real_pkg.__path__)
     if expected_reader_class:
-        import_module.assert_called_once_with(f'{real_pkg.__name__}.{reader_type}')
+        import_module.assert_called_once_with(f"{real_pkg.__name__}.{reader_type}")
 
 
 def import_mocks():
     # Because of the way python works, we need to do a bit of trickery to make the mocks package available
     # First, determine the absolute path to the mocks directory
-    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'mocks'))
+    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mocks"))
 
     # Import the __init__.py file as a module to serve as the package
-    package = load_from_path('mocks', os.path.join(module_path, '__init__.py'))
+    package = load_from_path("mocks", os.path.join(module_path, "__init__.py"))
 
     return package
 
